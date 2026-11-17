@@ -133,6 +133,10 @@ input.ta{width:100%;margin-bottom:4px;font-size:13px}
 #saveFloat { position: fixed; right: 14px; bottom: 14px; z-index: 21; padding: 11px 18px; border-radius: 12px; font-weight: 700; box-shadow: 0 4px 14px rgba(0,0,0,.25) }
 #errSide.okp { border-color: var(--ok, #2e8b57) } #errSide.okp button { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; font-weight: 700 }
 #errSide button.goto { display: block; width: 100%; text-align: left; margin: 4px 0 0; padding: 5px 8px }
+#errSide .grp { font-weight: 700; font-size: 12px; margin: 8px 0 2px; color: var(--muted, #666) } #errSide .grp:first-child { margin-top: 2px }
+#errSide button.next { display: block; width: 100%; text-align: left; margin: 6px 0 0; padding: 8px 10px; font-weight: 700 }
+#errSide .sum { font-size: 12px; color: var(--muted, #666); margin: 4px 0 0 }
+.pcard .miss { margin: 4px 0 6px; font-size: 12.5px } .pcard .miss button.goto { display: inline-block; width: auto; margin: 2px 4px 2px 0; padding: 3px 8px; font-size: 12px }
 @media (max-width: 760px) { #errSide { max-width: calc(100vw - 24px); bottom: 70px } }
 /* 13/11/2026 (auditoria, lote A): texto sobre a cor de marca legível em modo escuro (M7); cores do «a confirmar» por variável */
 :root { --on-accent: #fff; --need: #e8a317; --need-bg: #fff8e1; --need-fg: #a36a00 }
@@ -2818,7 +2822,7 @@ const I18N_SRC = {
   'Bleu turquoise': ['Azul turquesa', 'Turquoise blue'],
   'Vert jaune': ['Verde amarelado', 'Yellow green'],
   'Double thermolaquage (époxy + polyester)': ['Dupla termolacagem (epóxi + poliéster)', 'Double powder coating (epoxy + polyester)'],
-  'Type de portail': ['Tipo de portão', 'Gate type'],
+  'Type de portail': ['Tipo de portão', 'Gate type'], 'Champ suivant': ['Próximo campo', 'Next field'], 'Vos coordonnées': ['Os seus dados', 'Your details'],
   // 17/11/2026 (Gonçalo): textos que ficavam em francês ao mudar de língua
   'Poteau(x) de portail – 2e groupe (autre rôle, section ou fixation)': ['Poste(s) de portão – 2.º grupo (outro papel, secção ou fixação)', 'Gate post(s) – 2nd group (other role, section or fixing)'],
   'Poteau(x) alu – 2e groupe (autre rôle, section ou fixation)': ['Poste(s) alu – 2.º grupo (outro papel, secção ou fixação)', 'Alu post(s) – 2nd group (other role, section or fixing)'],
@@ -5399,11 +5403,30 @@ function editorChange(e) {
   }
 }
 // 05/11/2026 (feedback interno): painel lateral fixo com os campos em falta; cada um leva ao campo
-function renderErrSide(errors) {
+// 17/11/2026 (Gonçalo): painel «À compléter» com os campos separados por tipo (coordonnées → produits, de cima para baixo); cada linha leva ao campo, mesmo de um produto que não está em edição.
+// Com um produto em edição só se mostram os campos desse produto; os restantes aparecem depois de o fechar. Se forem muitos (> ERR_MANY) o painel só mostra «Champ suivant» (leva ao próximo).
+const ERR_MANY = 4; let errCursor = 0;
+function errItems() {
+  if (editing && editing.v) {
+    const m = CAT[editing.v.code]; if (!m) return { edit: true, items: [] };
+    return { edit: true, items: validateProduct(m, editing.v.f || {}).errors.map(e => ({ sc: 'edit', k: e.k, ui: e.ui })) };
+  }
+  const items = [];
+  if (tentou || S.products.length) clientErrors(readClient()).forEach(e => items.push({ sc: 'client', k: e.k, ui: t(CLIENT_LABEL[e.k] || e.msg) }));
+  S.products.forEach((p, i) => { const m = CAT[p.code]; if (!m) return; validateProduct(m, p.v).errors.forEach(e => items.push({ sc: 'prod', i, k: e.k, ui: e.ui, tit: (i + 1) + '. ' + uiTitle(p) })); });
+  return { edit: false, items };
+}
+function errGo(it) {
+  if (it.sc === 'client') { tentou = true; clientTouched = true; renderStatus(); focusClient(it.k); }
+  else if (it.sc === 'prod') { errCursor = 0; startEdit(it.i); if (editing) { editing.touched = true; renderEditor(); focusField(it.k); } }
+  else focusField(it.k);
+}
+function renderErrSide() {
   const el = document.getElementById('errSide'); if (!el) return;
   // 05/11/2026 (Gonçalo): «Enregistrer le produit» flutuante em baixo à direita, só com a edição de um produto aberta
   syncFloat();
-  if (!errors || !errors.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const { edit, items } = errItems();
+  if (!items.length) { el.hidden = true; el.innerHTML = ''; errCursor = 0; return; }
   el.classList.remove('okp');
   el.hidden = false;
   // 13/11/2026 (B4): recolhível; em ecrãs estreitos começa recolhido (só «À compléter : n») para não tapar os campos
@@ -5411,7 +5434,22 @@ function renderErrSide(errors) {
   const hadFocus = el.contains(document.activeElement) && document.activeElement.classList.contains('tg');
   el.classList.toggle('shut', !errSideOpen);
   el.setAttribute('aria-label', t('À compléter'));
-  el.innerHTML = `<button type="button" class="tg" aria-expanded="${errSideOpen}" aria-controls="errSideLst">${t('À compléter :')} ${errors.length}</button><div class="lst" id="errSideLst">` + errors.map(e => `<button type="button" class="goto" data-goto="${esc(e.k)}">${esc(e.ui)}</button>`).join('') + '</div>';
+  let body = '';
+  if (items.length <= ERR_MANY) {
+    if (edit) body = items.map(e => `<button type="button" class="goto" data-goto="${esc(e.k)}">${esc(e.ui)}</button>`).join('');
+    else {
+      const cl = items.filter(x => x.sc === 'client');
+      if (cl.length) body += `<div class="grp">${t('Vos coordonnées')}</div>` + cl.map(e => `<button type="button" class="goto" data-gotoc="${esc(e.k)}">${esc(e.ui)}</button>`).join('');
+      const seen = new Set();
+      items.filter(x => x.sc === 'prod').forEach(e => { if (!seen.has(e.i)) { seen.add(e.i); body += `<div class="grp">${esc(e.tit)}</div>`; } body += `<button type="button" class="goto" data-gotop="${e.i}" data-k="${esc(e.k)}">${esc(e.ui)}</button>`; });
+    }
+  } else {
+    errCursor = errCursor % items.length; const nx = items[errCursor];
+    const nC = items.filter(x => x.sc === 'client').length, nP = items.length - nC;
+    body = (edit ? '' : `<div class="sum">${nC ? t('Vos coordonnées') + ' : ' + nC + (nP ? ' · ' : '') : ''}${nP ? t('Produits') + ' : ' + nP : ''}</div>`)
+      + `<button type="button" class="next primary" data-errnext="1">${t('Champ suivant')} : ${esc(nx.ui)} (${errCursor + 1}/${items.length})</button>`;
+  }
+  el.innerHTML = `<button type="button" class="tg" aria-expanded="${errSideOpen}" aria-controls="errSideLst">${t('À compléter :')} ${items.length}</button><div class="lst" id="errSideLst">${body}</div>`;
   if (hadFocus) el.querySelector('.tg').focus({ preventScroll: true });
 }
 let errSideOpen = null;
@@ -5459,6 +5497,8 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-savebtn]')) { e.preventDefault(); $('btnSave').click(); return; }
   if (e.target.closest('#pdfFloat')) { e.preventDefault(); $('secSend').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); if (g.closest('#errSide') && window.matchMedia && window.matchMedia('(max-width: 760px)').matches) { errSideOpen = false; $('errSide').classList.add('shut'); const tg = $('errSide').querySelector('.tg'); if (tg) tg.setAttribute('aria-expanded', 'false'); } focusField(g.dataset.goto); }
+  const gp = e.target.closest('[data-gotop]'); if (gp) { e.preventDefault(); errGo({ sc: 'prod', i: +gp.dataset.gotop, k: gp.dataset.k }); return; }
+  const en = e.target.closest('[data-errnext]'); if (en) { e.preventDefault(); const { items } = errItems(); if (items.length) { const j = errCursor % items.length; errCursor = j + 1; errGo(items[j]); renderErrSide(); } return; }
   const gc = e.target.closest('[data-gotoc]'); if (gc) { e.preventDefault(); tentou = true; clientTouched = true; renderStatus(); focusClient(gc.dataset.gotoc); }
 });
 function deselRadio(rd) {
@@ -5548,6 +5588,7 @@ function renderProducts() {
     return `<div class="pcard ${d.status === 'orange' ? 'orange' : ''} ${ed ? 'editing' : ''}">
       <div class="t">${i + 1}. ${esc(uiTitle(p))} <span class="chip ${st.errors.length ? 'bad' : (d.status === 'orange' ? 'warn' : 'ok')}" style="margin-left:6px">${t(st.errors.length ? 'À compléter' : (d.status === 'orange' ? 'À étudier' : 'Complet'))}</span></div>
       <div class="s">${m.pieces ? `${t(m.mat === 'alu' ? 'Aluminium' : 'Acier')} · ${t('Pièces détachées')} · ${t(p.v.pc_fiche === 'habitat' ? 'Habitat' : 'Industriel')}` : m.hab ? `${t(HAB_FAMILY_LABEL[m.famille] || '')} · ${esc(m.gammeNom)}` : m.alu ? `${t('Aluminium')} · ${t('Industriel')}` : `${t('Acier')} · ${t(m.gamme === 'co' ? 'Collectif' : m.gamme === 'sm' ? 'Industriel sur mesure' : 'Industriel standard')}`}${m.pieces ? '' : ` · ${t('Quantité')} ${esc(p.v.qt || '')}`}</div>
+      ${st.errors.length ? `<div class="miss">${t('À compléter :')} ${st.errors.slice(0, 6).map(e => `<button type="button" class="goto" data-gotop="${i}" data-k="${esc(e.k)}">${esc(e.ui)}</button>`).join('')}${st.errors.length > 6 ? ' …' : ''}</div>` : ''}
       ${detHtml(d, i)}
       <div class="row"><button type="button" data-ed="${i}">${t('Modifier')}</button><button type="button" data-dup="${i}">${t('Dupliquer')}</button><button type="button" data-del="${i}">${t('Supprimer')}</button>${S.products.length > 1 ? `<button type="button" data-up="${i}" ${i === 0 ? 'disabled' : ''} title="${t('Monter')}" aria-label="${t('Monter')}">↑</button><button type="button" data-down="${i}" ${i === S.products.length - 1 ? 'disabled' : ''} title="${t('Descendre')}" aria-label="${t('Descendre')}">↓</button>` : ''}</div></div>`;
   }).join('');
@@ -5738,6 +5779,7 @@ function renderStatus() {
   const editErr = editing && editing.v.code && validateProduct(CAT[editing.v.code], editing.v.f).errors.length;
   $('btnGoto').hidden = !(ce.length || bad || editErr || !S.products.length || (editing && !editing.v.code));
   markClient(ce);
+  if (!editing) renderErrSide();   // 17/11/2026: fora da edição o painel mostra os dados do cliente e os produtos em falta
 }
 function syncNorc() { const el = document.querySelector('#secClient [data-c="norc"]'), r = document.querySelector('input[name="c_typeDoc"]:checked'); if (el) el.hidden = !(r && r.value === 'commande'); const ei = document.querySelector('#secClient [data-c="norcInt"]'); if (ei) ei.hidden = !(INTERNE && r && r.value === 'commande'); }   // 05/11/2026 (Sónia): Nº do orçamento só em «Confirmation de commande»
 // 07/11/2026 (Gonçalo): «Enregistrer le produit» só aparece com um produto em edição aberto; sem edição aparece, no mesmo sítio, o botão que leva ao fim da página (geração dos PDF)

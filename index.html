@@ -2818,7 +2818,22 @@ const I18N_SRC = {
   'Bleu turquoise': ['Azul turquesa', 'Turquoise blue'],
   'Vert jaune': ['Verde amarelado', 'Yellow green'],
   'Double thermolaquage (époxy + polyester)': ['Dupla termolacagem (epóxi + poliéster)', 'Double powder coating (epoxy + polyester)'],
-  'Type de portail': ['Tipo de portão', 'Gate type'], 'Portail 2 vantaux (battants)': ['Portão de 2 batentes', 'Gate with 2 leaves (swing)'], 'Portail coulissant / autoportant': ['Portão de correr / autoportante', 'Sliding / cantilever gate'], 'Choisissez le type de portail': ['Escolha o tipo de portão', 'Choose the gate type'], 'Les portiques n’existent que sur les portails coulissants': ['Os pórticos só existem nos portões de correr', 'Gantries only exist on sliding gates'], 'Ajouter aussi : Crapaudine à visser au sol réglable': ['Juntar também: rótula de chão regulável a aparafusar (crapaudine)', 'Also add: adjustable screw-on floor pivot (crapaudine)'],
+  'Type de portail': ['Tipo de portão', 'Gate type'],
+  // 17/11/2026 (Gonçalo): textos que ficavam em francês ao mudar de língua
+  'Poteau(x) de portail – 2e groupe (autre rôle, section ou fixation)': ['Poste(s) de portão – 2.º grupo (outro papel, secção ou fixação)', 'Gate post(s) – 2nd group (other role, section or fixing)'],
+  'Poteau(x) alu – 2e groupe (autre rôle, section ou fixation)': ['Poste(s) alu – 2.º grupo (outro papel, secção ou fixação)', 'Alu post(s) – 2nd group (other role, section or fixing)'],
+  'Le 2e groupe de poteaux n’existe que pour les portails coulissants': ['O 2.º grupo de postes só existe nos portões de correr', 'The 2nd group of posts only exists on sliding gates'],
+  'Poteau 2e groupe : choisissez un rôle différent de celui du 1er groupe': ['Postes do 2.º grupo: escolha um papel diferente do 1.º grupo', '2nd group posts: choose a role different from the 1st group'],
+  'Grillagé': ['Em rede (grillagé)', 'Mesh'], 'Tôlé': ['Em chapa', 'Sheet metal'], 'Autre (préciser)': ['Outro (especificar)', 'Other (specify)'], 'Longueur': ['Comprimento', 'Length'], 'Galva': ['Galva', 'Galvanised'],
+  'Section des poteaux (par défaut, tous les rôles)': ['Secção dos postes (por defeito, todos os papéis)', 'Post section (default, all roles)'], 'Comme ci-dessus': ['Como acima', 'As above'], 'Frontal': ['Frontal', 'Front'],
+  'Portail à 2 vantaux': ['Portão de 2 batentes', 'Gate with 2 leaves'], 'Portillon à 1 vantail': ['Portilhão de 1 batente', 'Pedestrian gate with 1 leaf'],
+  'Finition : thermolaquage par plastification, poudrage électrostatique au polyester sans TGIC': ['Acabamento: termolacagem por plastificação, pintura eletrostática em pó de poliéster sem TGIC', 'Finish: thermolacquering by plasticising, electrostatic polyester powder coating, TGIC-free'],
+  'Dimensions du catalogue standard': ['Dimensões do catálogo standard', 'Standard catalogue dimensions'], 'Sans serrure (portail prêt à motoriser)': ['Sem fechadura (portão pronto a motorizar)', 'Without lock (gate ready to be motorised)'],
+  'Hauteur des poteaux : {h} mm (H + {d} mm)': ['Altura dos postes: {h} mm (H + {d} mm)', 'Post height: {h} mm (H + {d} mm)'], '{p} – position': ['{p} – posição', '{p} – position'],
+  'Kit Radius : coulissant d’angle à vantaux pivotants (sur devis, passage {n} m maxi, écoinçon > {n} mm)': ['Kit Radius: portão de correr de canto com folhas pivotantes (sob consulta, passagem máx. {n} m, painel de canto > {n} mm)', 'Radius kit: corner sliding gate with pivoting leaves (on quotation, passage {n} m max, corner panel > {n} mm)'],
+  'Poteau technique avec moteur intégré {n}x{n} (sur devis, hauteur {n} mm maxi)': ['Poste técnico com motor integrado {n}x{n} (sob consulta, altura máx. {n} mm)', 'Technical post with built-in motor {n}x{n} (on quotation, height {n} mm max)'],
+  'pages': ['páginas', 'pages'], 'format': ['formato', 'format'],
+ 'Portail 2 vantaux': ['Portão de 2 batentes', 'Gate with 2 leaves'], 'Portail coulissant / autoportant': ['Portão de correr / autoportante', 'Sliding / cantilever gate'], 'Les portiques n’existent que sur les portails coulissants': ['Os pórticos só existem nos portões de correr', 'Gantries only exist on sliding gates'], 'Ajouter aussi : Crapaudine à visser au sol réglable': ['Juntar também: rótula de chão regulável a aparafusar (crapaudine)', 'Also add: adjustable screw-on floor pivot (crapaudine)'],
   '2 vantaux': ['2 folhas', '2 leaves'],
   'Vantaux inégaux (tiercé)': ['Folhas desiguais (tiercé)', 'Unequal leaves (tiercé)'],
   'Monovantail': ['Folha única', 'Single leaf'],
@@ -3196,6 +3211,9 @@ function t(s) {
   // «… (50 à 100 ouvertures/jour)»
   const m = String(s).match(/^(.*) \((\d+) à (\d+) ouvertures\/jour\)$/);
   if (m) { const o = OPEN_DAY[LANG]; return `${t(m[1])} (${m[2]} ${o[1]} ${m[3]} ${o[3]})`; }
+  // 17/11/2026: textos com vários números («… passage 7 m maxi, écoinçon > 1500 mm»): chave com um {n} por número; o separador de milhares dos dados do Chiffreur («1 500») perde-se
+  { const s2 = String(s).replace(/(\d)[ \u00a0\u202f](\d{3})(?!\d)/g, '$1$2'), nums = s2.match(/\d+(?:[.,]\d+)?/g);
+    if (nums && nums.length > 1) { const h2 = I18N_SRC[s2.replace(/\d+(?:[.,]\d+)?/g, '{n}')]; if (h2) { let k = 0; return h2[i].replace(/\{n\}/g, () => nums[k++]); } } }
   // «Cote 3 (…)», «Fer de lance N°2»: chave com {n}
   const num = String(s).match(/^(.*?)(\d+)(.*)$/);
   if (num && I18N_SRC[num[1] + '{n}' + num[3]]) return I18N_SRC[num[1] + '{n}' + num[3]][i].split('{n}').join(num[2]);
@@ -3848,8 +3866,8 @@ function fieldsHab(m, v) {
   else if (!(v.trait === 'BRUT' || (v.trait && cpt[v.trait] && !cpt[v.trait].length))) add({ k: 'coul', sec: 'Finition', label: 'Couleur', type: 'select', opts: [...cols.map(c => [c.reference, `${c.reference.replace(/^RAL/, 'RAL ')} – ${c.nom}`]), ['__autre', 'Autre RAL (saisie manuelle)']], req: true });
   if (v.coul === '__autre' && v.trait !== 'BRUT' && !(v.trait && cpt[v.trait])) add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
   const fins = v.coul && v.coul !== '__autre' ? habFinitions(m, v.coul) : habFinitions(m, '');
-  if (fins.length) add({ k: 'fin', sec: 'Finition', label: 'Finition', type: 'radio', opts: fins, req: true, deselect: true });   // 12/11/2026: obrigatória a escolha entre Texturée e Mat (as outras, só uma possível, facultativas)
-  else if (v.coul && (m.famille !== 'fer-habitat' || habChapa(m, v))) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: m.famille !== 'fer-habitat' });   // 05/11/2026; 17/11/2026: no Ferro só com chapa e facultativo
+  if (fins.length) add({ k: 'fin', sec: 'Finition', label: 'Finition', type: 'radio', opts: fins, req: !(typeof INTERNE !== 'undefined' && INTERNE), deselect: true });   // 12/11/2026: obrigatória a escolha entre Texturée e Mat (as outras, só uma possível, facultativas)
+  else if (v.coul && (m.famille !== 'fer-habitat' || habChapa(m, v))) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: m.famille !== 'fer-habitat' && !(typeof INTERNE !== 'undefined' && INTERNE) });   // 05/11/2026; 17/11/2026: no Ferro só com chapa e facultativo
   habFinExtra(m, v, add);
   };
   if (trs.length) corBlock();   // com Traitement (Ferro): a Couleur vem logo a seguir; sem Traitement (Alu) fica onde estava
@@ -4246,8 +4264,8 @@ function fieldsHabCloture(m, v) {
   if (!(v.trait && cpt[v.trait] && !cpt[v.trait].length)) add({ k: 'coul', sec: 'Finition', label: 'Couleur', type: 'select', opts: [...cols.map(c => [c.reference, `${c.reference.replace(/^RAL/, 'RAL ')} – ${c.nom}`]), ...(v.trait && cpt[v.trait] ? [] : [['__autre', 'Autre RAL (saisie manuelle)']])], req: true });
   if (v.coul === '__autre') add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
   const fins = habFinitions(m, v.coul && v.coul !== '__autre' ? v.coul : '');
-  if (fins.length) add({ k: 'fin', sec: 'Finition', label: 'Finition', type: 'radio', opts: fins, req: true, deselect: true });   // 12/11/2026: obrigatória a escolha entre Texturée e Mat (as outras, só uma possível, facultativas)
-  else if (v.coul && (m.famille !== 'fer-habitat' || habChapa(m, v))) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: m.famille !== 'fer-habitat' });   // 05/11/2026; 17/11/2026: no Ferro só com chapa e facultativo
+  if (fins.length) add({ k: 'fin', sec: 'Finition', label: 'Finition', type: 'radio', opts: fins, req: !(typeof INTERNE !== 'undefined' && INTERNE), deselect: true });   // 12/11/2026: obrigatória a escolha entre Texturée e Mat (as outras, só uma possível, facultativas)
+  else if (v.coul && (m.famille !== 'fer-habitat' || habChapa(m, v))) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: m.famille !== 'fer-habitat' && !(typeof INTERNE !== 'undefined' && INTERNE) });   // 05/11/2026; 17/11/2026: no Ferro só com chapa e facultativo
   habFinExtra(m, v, add);
   // opções (por tipo de clôture)
   for (const o of habOptionList(m, v)) {
@@ -4602,7 +4620,7 @@ function fieldsAluCl(m, v) {
   if (m.code === 'ALUI:ULY2') add({ k: 'biseau', sec: 'Options – équipements', label: 'Coupe biseautée en partie haute', type: 'check' });
   add({ k: 'coul', sec: 'Finition', label: 'Couleur', type: 'select', opts: [...m.couleurs.map(c => [c, `${c} – ${t(COLORS[c] || '')}`]), ['__autre', 'Autre RAL (saisie manuelle)']], req: true });
   if (v.coul === '__autre') add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
-  if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: true });   // 05/11/2026
+  if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: !(typeof INTERNE !== 'undefined' && INTERNE) });   // 05/11/2026
   add({ k: 'obs', sec: 'Observations', label: 'Observations pour ce produit (demandes particulières, modifications…)', type: 'textarea' });
   return F;
 }
@@ -4686,7 +4704,7 @@ function fieldsAluInd(m, v) {
   // --- acabamento (alumínio: só thermolaquage RAL; os tratamentos de aço do ARC ficam sem caixa, decisão 44.1)
   add({ k: 'coul', sec: 'Finition', label: 'Couleur', type: 'select', opts: [...m.couleurs.map(c => [c, `${c} – ${t(COLORS[c] || '')}`]), ['__autre', 'Autre RAL (saisie manuelle)']], req: true });
   if (v.coul === '__autre') add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
-  if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: true });   // 05/11/2026
+  if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: !(typeof INTERNE !== 'undefined' && INTERNE) });   // 05/11/2026
   // --- opções (tarif p.235–237): as que têm caixa no ARC marcam-na, as outras vão para as Observations
   add({ k: 'o_micro', sec: 'Options – remplissage et habillage', label: 'Tôle microperforée (3 mm, Ø5 R5 T8)', type: 'select', opts: [['', 'Aucun'], ['cadre', 'Montée sur cadre (sans le barreaudage)'], ['applique', 'Montée en applique sur barreaudage']], wide: true });
   add({ k: 'o_soub', sec: 'Options – remplissage et habillage', label: 'Tôle en partie basse (aluminium 30/10, traverse intermédiaire comprise)', type: 'select', opts: [['', 'Aucun'], ['500', 'Soubassement jusqu’à 500 mm de hauteur'], ['600', 'Soubassement de plus de 500 mm jusqu’à 600 mm'], ['1000', 'Soubassement de plus de 600 mm jusqu’à 1000 mm']], wide: true });

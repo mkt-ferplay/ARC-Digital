@@ -6927,7 +6927,7 @@ if (!PROD && INTERNE && location.hash.startsWith('#demo')) { exemple(); startEdi
     const prod = { head: spec.head || spec.label || '', kindLine, pairs, flags, bullets, options, raw: spec.raw || '' };
     let mm = resolve(spec), baseIndef = false;
     // 13/11/2026 (Gonçalo): modelo que o catálogo não tem (Canisse, Fluviale Alu, AZ5…): produto «modèle à définir» com uma variante-base do mesmo tipo e família; o nome do devis fica nas Observações
-    if (!mm.code && I.baseVariant && spec.kind) { const bv = I.baseVariant(spec.kind, spec.mat || 'fer', !!spec.hab, prod); if (bv) { mm = Object.assign({}, mm, { code: bv, base: true }); baseIndef = true; } }
+    if (!mm.code && I.baseVariant && spec.kind && typeof INTERNE !== 'undefined' && INTERNE) { const bv = I.baseVariant(spec.kind, spec.mat || 'fer', !!spec.hab, prod); if (bv) { mm = Object.assign({}, mm, { code: bv, base: true }); baseIndef = true; } }
     let ap;
     if (mm.code) {
       ap = I.finishProd(prod, mm);
@@ -7691,7 +7691,7 @@ if (!PROD && INTERNE && location.hash.startsWith('#demo')) { exemple(); startEdi
       const mo = des.match(/Alumin\w+\s+(.+?)\s+-\s+/i); if (sp.mat === 'alu' && mo) { sp.hab = mo[1].trim(); }
       sp.obs = det.slice(); sp.flags = [];
       sp.notes = [];
-      if (sp.hab && typeof CAT !== 'undefined') { const ex = Object.values(CAT).some(m => m.hab && m.mat === 'alu' && nz(m.label) === nz(sp.hab)); if (!ex) sp.notes.push('Modèle « ' + sp.hab + ' » : variante absente du catalogue, modèle à définir (le nom du bon de commande reste dans les Observations)'); }
+      if (sp.hab && typeof CAT !== 'undefined') { const ex = Object.values(CAT).some(m => m.hab && m.mat === 'alu' && nz(m.label) === nz(sp.hab)); if (!ex) sp.notes.push('Modèle « ' + sp.hab + ' » : variante absente du catalogue, ' + (typeof INTERNE !== 'undefined' && INTERNE ? 'modèle à définir (le nom du bon de commande reste dans les Observations)' : 'modèle à choisir')); }
       if (!sp.ouv) delete sp.ouv;
       specs.push(sp);
     });
@@ -7823,7 +7823,8 @@ if (!PROD && INTERNE && location.hash.startsWith('#demo')) { exemple(); startEdi
     const products = r.specs.map(sp => buildProduct(sp, I, []));
     // linhas de peças («Poteau Alu sur platine 150 x 150», qtd 2): produto «Pièces détachées» (modelo de Peças); o rôle dos poteaux nunca se assume
     for (const pc of r.pieces || []) {
-      const m = CAT['PIECES:' + (pc.mat || 'alu')]; if (!m) continue;
+      const m = CAT['PIECES:' + (pc.mat || 'alu')];
+      if (!m) { const alvo = products[0]; if (alvo) alvo.notes = (alvo.notes || []).concat(['Ligne non importée (pièces) : ' + pc.des + ' — à ajouter à la main']); continue; }
       const errs = validateProduct(m, pc.v).errors;
       products.push({ head: 'Pièces détachées', kindLine: '', model: { code: m.code }, code: m.code, indef: false, qtRead: true, mat: m.mat, fiche: 'industriel', v: pc.v, log: [{ field: 'pc', value: 'pièces', src: pc.des }], left: [], missing: errs.map(e => e.ui || e.msg), raw: [pc.des].concat(pc.det || []).join('\n'), notes: ['Bon de commande : ligne de pièces (' + pc.des + ') — vérifier le rôle des poteaux'] });
     }

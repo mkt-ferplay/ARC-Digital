@@ -484,14 +484,15 @@ viewBox="0 0 17206.5 4581.43"
     const b = Array.isArray(spec) ? M.boxes.find(x => x.name === spec[0] && Math.abs(x.y - spec[1]) < 8) : M.boxes.find(x => x.name === spec);
     if (b) markAt([b.x, b.y]); else obs.push(tr('Modèle') + ' : ' + P.modele);
     if (kind === 'coulissant' && v.sens) { const s = hBox(M, /ga/i.test(v.sens || '') ? /^OUVERTURE A GAUCHE/ : /^OUVERTURE A DROITE/); if (s) markAt([s.x, s.y]); }
-    const pq = (P.poteaux || []).filter(p => /^100X100$/i.test(p.s)).reduce((a, p) => a + p.qt, 0); if (pq) txt('QT_POTEAUX', pq);
+    const pq = (P.poteaux || []).filter(p => /^100X100$/i.test(p.s)).reduce((a, p) => a + p.qt, 0) + (/^100X100$/i.test(String(P.potSec || '')) ? potTot(P) : 0); if (pq) txt('QT_POTEAUX', pq);
     for (const p of (P.poteaux || []).filter(p => !/^100X100$/i.test(p.s))) obs.push(`${tr('Poteaux')} ${p.s} × ${p.qt}${p.h ? ' – H ' + p.h : ''}`);
     if (P.fin === 'MAT') obs.push(tr('Finition') + ' : MAT');
-    potLines(P).forEach(l => obs.push(l));
+    // poteaux de réception / guidage: com secção 100x100 a quantidade vai para o campo QT_POTEAUX; outras secções, ou réception + guidage juntos (o campo só leva o total), também nas Observations
+    if (potTot(P) && (!/^100X100$/i.test(String(P.potSec || '')) || (P.potRecOn && P.potGuiOn))) potLines(P).forEach(l => obs.push(l));
     if (P.surMesure) {
       obs.unshift(tr('Modèle') + ' : ' + P.modele);
       if (P.forme) obs.push(tr('Forme') + ' : ' + P.forme);
-      if (P.poseTitre) obs.push(tr('Type de pose') + ' : ' + P.poseTitre + (P.fixTitre ? ' – ' + P.fixTitre + (P.fixTitre2 ? ' + ' + P.fixTitre2 : '') : '') + (P.deniv ? ' (' + String(P.deniv).replace('.', ',') + ' %)' : ''));
+      if (P.poseTitre) obs.push(tr('Type de pose') + ' : ' + P.poseTitre + (P.fixTitre ? ' – ' + P.fixTitre + (P.fixTitre2 ? ' + ' + P.fixTitre2 : '') + (P.crap ? ' + ' + tr('Crapaudine à visser au sol réglable') : '') : '') + (P.deniv ? ' (' + String(P.deniv).replace('.', ',') + ' %)' : ''));
       if (P.sens && kind !== 'coulissant') obs.push(tr("Sens d'ouverture (vue extérieure)") + ' : ' + P.sens);
       if (P.kitLabel) obs.push(tr('Kit moteur') + ' : ' + P.kitLabel);
     }
@@ -502,6 +503,8 @@ viewBox="0 0 17206.5 4581.43"
 
   // poteaux de réception / guidage (alumínio, coulissants): o ARC não tem quantidade nem a opção «à visser» em todos os modelos,
   // por isso estas linhas vão sempre para as Observations
+  // 17/11/2026 (Gonçalo): quantidade total de poteaux de réception + guidage (Alu Habitat coulissant)
+  const potTot = P => P.potMode ? ((P.potRecOn ? Number(P.potRecQt) || 1 : 0) + (P.potGuiOn ? Number(P.potGuiQt) || 1 : 0)) : 0;
   function potLines(P) {
     if (!P.potMode) return [];
     const ORI = { FRONTAL: 'Frontal', LATERAL: 'Latéral', EXTERIEUR: 'Extérieur', INTERIEUR: 'Intérieur' };
@@ -574,7 +577,7 @@ viewBox="0 0 17206.5 4581.43"
       af.addToPage(page, { x: 30, y: Y(187), width: 207, height: 48, borderWidth: 0, font });
       limpa(af); af.setText(ansi(addr.map(x => String(x).toUpperCase()).join('\n'))); af.setFontSize(addr.length > 5 ? 5.5 : 7);
     } else addr.forEach((l, i) => text(l, 32, 145 + i * sp, Math.min(7, sp * 0.85), { max: 205 }));
-    text(client.ref + (total > 1 ? `  (${idx}/${total})` : ''), 308, 133.8, 9, { max: 258 });
+    text(client.ref, 308, 133.8, 9, { max: 258 });   // 17/11/2026 (Gonçalo): nunca «(1/2)» nem «(2/2)» na referência
     if (client.livraison === 'chantier') cross('chantier');
     if (client.livraison === 'grue') cross('chantier');   // a linha «déchargement avec grue» já vem do cabeçalho comum
     // quantidade, modelo, forma, cor
@@ -587,11 +590,15 @@ viewBox="0 0 17206.5 4581.43"
     if (O.DM) { text(String(O.DM).replace(/^Motif\s*/i, ''), 112, 285.5, 9, { max: 48 }); done.add('DM'); }
     if (O.DP) { const [nb, pos] = String(O.DP).split(' – '); text(String(nb).replace(/\D/g, ''), 220, 285.4, 9, { max: 52 }); text(pos, 142, 303, 9, { max: 130 }); done.add('DP'); }
     // dimensões: portail ou portillon
+    let SM_POT = null;
     const col = v.kind === 'portillon' ? 555 : 507;
     text(v.L, col, 243, 10, { right: true }); text(P.H1, col, 273, 10, { right: true }); text(P.H3, col, 303, 10, { right: true });
     // sentido de abertura
     if (v.sens) { if (v.kind === 'coulissant') cross(/droit/i.test(v.sens) ? 'coulD' : 'coulG'); else cross(/droit/i.test(v.sens) ? 'PD' : 'PG'); }
-    potLines(P).forEach(l => obs.push(l));
+    { const pt = potTot(P), si = { '100X100': 0, '150X150': 1, '200X200': 2 }[String(P.potSec || '').toUpperCase()];
+      // 17/11/2026 (Gonçalo): o ARC tem o bloco dos pilares (secção, quantidade, altura): lá vai a quantidade (réception + guidage) e a altura H1; só repete nas Observations quando há dois papéis (o campo só leva o total)
+      if (pt && si !== undefined) { SM_POT = { si, pt, H: P.H1 || v.H }; if (P.potRecOn && P.potGuiOn) potLines(P).forEach(l => obs.push(l)); }
+      else if (pt) potLines(P).forEach(l => obs.push(l)); }
     // pose (só a standard está impressa: o resto vai para as Observations)
     if (P.poseTitre && /pente/i.test(P.poseTitre)) { cross(v.kind === 'portillon' ? 'penteT' : 'penteP'); obs.push(tr('Type de pose') + ' : ' + P.poseTitre + (P.deniv ? ' (' + String(P.deniv).replace('.', ',') + ' %)' : '')); }
     else if (P.poseTitre && !/^Standard/i.test(P.poseTitre)) obs.push(tr('Type de pose') + ' : ' + P.poseTitre);
@@ -615,6 +622,7 @@ viewBox="0 0 17206.5 4581.43"
     }
     // poteaux à sceller (100x100, 150x150, 200x200) e platines
     const sec = { '100X100': 0, '150X150': 1, '200X200': 2 };
+    if (SM_POT && !(P.poteaux || []).some(q => sec[String(q.s).toUpperCase()] === SM_POT.si)) { const yy = [670.2, 687.4, 702.9][SM_POT.si]; text(SM_POT.pt, 360, yy, 9, { center: true, max: 20 }); text(SM_POT.H, 489, yy, 9, { center: true, max: 36 }); }
     for (const p of P.poteaux || []) {
       const i = sec[String(p.s).toUpperCase()]; if (i === undefined) continue;
       text(p.qt, 360, [670.2, 687.4, 702.9][i], 9, { center: true, max: 20 }); text(p.h, 489, [670.2, 687.4, 702.9][i], 9, { center: true, max: 36 });
@@ -1118,7 +1126,7 @@ viewBox="0 0 17206.5 4581.43"
     // opções
     for (const [id, val] of Object.entries(P.opts || {})) {
       const lab = (P.optLabels || {})[id] || id;
-      if (/tierc/i.test(lab) && kind === 'battant') { box(/^INEGAUX \/ TIERCE/); obs.push(lab + ' : ' + val); continue; }
+      if (/tierc/i.test(lab) && kind === 'battant') { box(/^INEGAUX \/ TIERCE/); obs.push(lab + ' : ' + String(val).replace(/^vantaux\s+tierc[ée]e?s?\s*/i, '')); continue; }   // 17/11/2026: a cruz já diz «tiercé»; nas Observations só a repartição (1/3 2/3)
       if (/fers de lance/i.test(lab)) { box(/^FERS DE LANCE/); name('MODELE_MOTIFS', String(val), 7); continue; }
       // 03/11/2026 (feedback da Sónia): «Tôles basses» = SOUBASSEMENT TÔLÉ + TÔLE (NON) AJOURÉE + PLANE / POINTE DIAMANT, marcados no ARC e sem repetir nas Observations
       if (Number(id) === 74 && typeof val === 'string') {
@@ -1254,6 +1262,9 @@ viewBox="0 0 17206.5 4581.43"
     // pose e fixação
     if (P.pose) { if (!box(HPOSERE[P.pose]) && P.poseTitre) obs.push(tr('Type de pose') + ' : ' + P.poseTitre); if (P.pose == 5 && P.deniv) tx(/DENIVELE PAR ML\)$/, String(P.deniv).replace('.', ',')); if (P.pose == 6) box(/^GONDS A SCELLER/); }
     for (const ft of [P.fixTitre, P.fixTitre2].filter(Boolean)) { const r = HFIXRE.find(([a]) => a.test(ft)); if (!(r && box(r[1]))) obs.push(tr('Fixation') + ' : ' + ft); }   // Standard + gond avec cache marca as duas
+    // 17/11/2026 (Gonçalo): «Gonds 3 points à visser haut et bas avec cache gonds» marca também «Gonds hauts avec cache-gonds»; a crapaudine acompanha pivot / multiréglage / 3 pontos
+    if (/3 points.*cache/i.test(P.fixTitre || '')) box(/^GONDS HAUTS AVEC CACHE-GONDS/);
+    if (P.crap && !box(/^CRAPAUDINE/)) obs.push(tr('Crapaudine à visser au sol réglable'));
     // abertura
     if (P.serPort) box(P.serPort === 'sans' ? /^SANS SERRURE ET POIGNEE/ : /^SERRURE ET POIGNEE/);   // portillon alumínio
     if (P.ouv === 'manuelle') { box(/^SERRURE ET POIGNEE/); if (P.arret) { box(/^(2 )?ARRETS? AVEC BLOCAGE/); box(/visser/i.test(P.arret) ? /^A VISSER/ : /^A SCELLER/, { row: /ARRETS? AVEC BLOCAGE/ }); } }
@@ -1279,7 +1290,8 @@ viewBox="0 0 17206.5 4581.43"
     // a posição (frontal/lateral, exterior/interior) é facultativa: sem ela só se marca o poteau
     if (P.potRecOn) { box(/^POTEAU DE RECEPTION/); if (P.potRec) box(P.potRec === 'FRONTAL' ? /^FRONTAL$/ : /^LATERAL$/); }
     if (P.potGuiOn) { box(/^POTEAU DE GUIDAGE/); if (P.potGui) box(P.potGui === 'EXTERIEUR' ? /^EXTERIEUR$/ : /^INTERIEUR$/, { row: /POTEAU DE GUIDAGE/ }) || box(P.potGui === 'EXTERIEUR' ? /^EXTERIEUR$/ : /^INTERIEUR$/); }
-    potLines(P).forEach(l => obs.push(l));
+    // 17/11/2026 (Gonçalo): neste ARC só há cruz (sem quantidade): quantidade nas Observations só se for maior que 1 (ou «à visser», que o ARC não diz)
+    if (potTot(P) > 1 || P.potMode === 'visser') potLines(P).forEach(l => obs.push(l));
     if (P.potMode === 'visser' && P.potSec === '200X200') box(/^PLATINE A VISSER POUR POTEAU/);   // o ARC só tem esta caixa para a platine
     if (P.potSec && P.potMode === 'sceller') {
       // secção: numa linha própria («POTEAU ALU À SCELLER») ou por baixo de cada poteau (City)
@@ -1682,7 +1694,9 @@ viewBox="0 0 17206.5 4581.43"
         if (GP.ral) obsLines.push(tr('Clôture') + ' RAL ' + String(GP.ral).replace(/^RAL\s*/i, ''));
       }
     }
-    const opts = [...obsLines, ...(FI ? [] : (P.horsArc || []))];
+    // 17/11/2026 (Gonçalo): nunca separador de milhares nos números do ARC (rede de segurança para as etiquetas vindas dos dados do Chiffreur); o texto livre do cliente não se mexe
+    const noSep = x => String(x).replace(/(^|[\s(=<>≤≥:×;/])(\d{1,3})[   ](\d{3})(?!\d|[.,]\d)/g, '$1$2$3');   // só depois de espaço, «(», sinal ou «×»: «H1 700» (H1 = 700) não se junta
+    const opts = [...obsLines, ...(FI ? [] : (P.horsArc || []))].map(noSep);
     const obsTxt = [
       socCut ? tr('Société') + ' : ' + client.societe : '',   // 05/11/2026: nunca perder o nome da empresa
       [client.norc ? tr('Devis Chiffreur') + ' ' + tr('Nº') + ' ' + client.norc : '', client.norcInt ? tr('Devis interne') + ' ' + tr('Nº') + ' ' + client.norcInt : ''].filter(Boolean).join(' – '),   // 05/11/2026: Nº do orçamento Chiffreur e interno no topo das observações
@@ -2202,7 +2216,7 @@ const I18N_SRC = {
   'Serrure et poignée': ['Fechadura e puxador', 'Lock and handle'], 'Sans serrure et poignée': ['Sem fechadura nem puxador', 'Without lock and handle'],
   'Serrure': ['Fechadura', 'Lock'], 'Type de serrure': ['Tipo de fechadura', 'Lock type'],
   'Avec poteaux': ['Com postes', 'With posts'], 'Sans poteaux': ['Sem postes', 'Without posts'], 'Poteaux 150×150': ['Postes 150×150', 'Posts 150×150'], 'Poteaux 200×200': ['Postes 200×200', 'Posts 200×200'],
-  'Poteaux 150×150 : jusqu’à 5 000 mm de largeur.': ['Postes 150×150: até 5 000 mm de largura.', 'Posts 150×150: up to 5,000 mm wide.'],
+  'Poteaux 150×150 : jusqu’à 5000 mm de largeur.': ['Postes 150×150: até 5000 mm de largura.', 'Posts 150×150: up to 5000 mm wide.'],
   'Poteaux de guidage': ['Postes de guiamento', 'Guide posts'], 'Poteaux de réception': ['Postes de receção', 'Receiving posts'],
   'Simple': ['Simples', 'Single'], 'Portique': ['Pórtico', 'Gantry'], 'Sur mur ou pilier existant': ['Em muro ou pilar existente', 'On existing wall or pillar'],
   'Rail au sol': ['Calha no chão', 'Ground rail'], 'À visser (tôle pliée 4 × 75 mm)': ['Aparafusada (chapa quinada 4 × 75 mm)', 'Screw-fixed (folded plate 4 × 75 mm)'], 'À sceller (profil oméga 55 × 55)': ['Chumbada (perfil ómega 55 × 55)', 'Set in concrete (omega profile 55 × 55)'],
@@ -2223,9 +2237,9 @@ const I18N_SRC = {
   'Prémontage pattes moteur': ['Pré-montagem das patas do motor', 'Motor brackets pre-assembly'], 'Prémontage du palpeur embarqué': ['Pré-montagem do sensor embarcado', 'On-board sensor pre-assembly'], 'Pivots : fixation': ['Pivôs: fixação', 'Pivots: fixing'],
   'Le moteur est': ['O motor é', 'The motor is'], 'Fourni par le client': ['Fornecido pelo cliente', 'Supplied by the customer'], 'Fourni par Ferplay': ['Fornecido pela Ferplay', 'Supplied by Ferplay'],
   'Galvanisé à chaud': ['Galvanizado a quente', 'Hot-dip galvanised'], 'Sans laquage': ['Sem lacagem', 'Without lacquering'], 'Avec thermolaquage': ['Com termolacagem', 'With powder coating'],
-  'Poteau rond Ø60 x 3 mm : à partir de 1 750 mm de hauteur.': ['Poste redondo Ø60 x 3 mm: a partir de 1 750 mm de altura.', 'Round post Ø60 x 3 mm: from 1,750 mm height.'],
-  'A49 : largeur ≥ 9 000 mm avec hauteur ≤ 1 250 mm : combinaison non disponible, à étudier par Ferplay': ['A49: largura ≥ 9 000 mm com altura ≤ 1 250 mm: combinação não disponível, a estudar pela Ferplay', 'A49: width ≥ 9,000 mm with height ≤ 1,250 mm: combination not available, to be studied by Ferplay'],
-  'A45 motorisé ou motorisable : largeur maximum 12 000 mm : à étudier par Ferplay': ['A45 motorizado ou motorizável: largura máxima 12 000 mm: a estudar pela Ferplay', 'A45 motorised or motorisable: maximum width 12,000 mm: to be studied by Ferplay'],
+  'Poteau rond Ø60 x 3 mm : à partir de 1750 mm de hauteur.': ['Poste redondo Ø60 x 3 mm: a partir de 1750 mm de altura.', 'Round post Ø60 x 3 mm: from 1750 mm height.'],
+  'A49 : largeur ≥ 9000 mm avec hauteur ≤ 1250 mm : combinaison non disponible, à étudier par Ferplay': ['A49: largura ≥ 9000 mm com altura ≤ 1250 mm: combinação não disponível, a estudar pela Ferplay', 'A49: width ≥ 9000 mm with height ≤ 1250 mm: combination not available, to be studied by Ferplay'],
+  'A45 motorisé ou motorisable : largeur maximum 12000 mm : à étudier par Ferplay': ['A45 motorizado ou motorizável: largura máxima 12000 mm: a estudar pela Ferplay', 'A45 motorised or motorisable: maximum width 12000 mm: to be studied by Ferplay'],
   'Plus de 40 panneaux : à étudier par Ferplay': ['Mais de 40 painéis: a estudar pela Ferplay', 'More than 40 panels: to be studied by Ferplay'],
   'Au-delà de 5 m × 2,5 m : à étudier par Ferplay': ['Acima de 5 m × 2,5 m: a estudar pela Ferplay', 'Over 5 m × 2.5 m: to be studied by Ferplay'],
   'Moteur fourni par le client': ['Motor fornecido pelo cliente', 'Motor supplied by the customer'], 'Marque du moteur': ['Marca do motor', 'Motor brand'], 'Modèle du moteur': ['Modelo do motor', 'Motor model'],
@@ -2348,7 +2362,7 @@ const I18N_SRC = {
   'Demande de prix / confirmation de commande': ['Pedido de preço / confirmação de encomenda', 'Price request / order confirmation'], 'Options': ['Opções', 'Options'],
   // Habitat (fase A)
   'Habitat': ['Habitat', 'Residential'], 'Aluminium Habitat': ['Alumínio Habitat', 'Residential aluminium'], 'Acier Habitat': ['Ferro Habitat', 'Residential steel'], 'Collectif': ['Coletivo', 'Collective'],
-  'Variante': ['Variante', 'Variant'], 'Forme': ['Forma', 'Shape'], 'Forme du portail': ['Forma do portão', 'Gate shape'], 'Pose': ['Instalação', 'Installation'], 'Type de pose': ['Tipo de instalação', 'Installation type'],
+  'Variante': ['Variante', 'Variant'], 'Type de barreaudage': ['Tipo de barreaudage', 'Type of bar infill'], 'Nom du modèle': ['Nome do modelo', 'Model name'], 'Si le modèle n’est pas dans la liste': ['Se o modelo não estiver na lista', 'If the model is not in the list'], 'Forme': ['Forma', 'Shape'], 'Forme du portail': ['Forma do portão', 'Gate shape'], 'Pose': ['Instalação', 'Installation'], 'Type de pose': ['Tipo de instalação', 'Installation type'],
   'Fixation': ['Fixação', 'Fixing'], 'Sans': ['Sem', 'None'], 'Arrêt latéral de blocage': ['Batente lateral de bloqueio', 'Side locking stop'], "Butées d'arrêt": ['Batentes', 'Gate stops'],
   'Kit moteur': ['Kit de motor', 'Motor kit'], 'Sans kit moteur Ferplay': ['Sem kit de motor Ferplay', 'No Ferplay motor kit'], 'Texturée': ['Texturado', 'Textured'], 'Mat': ['Mate', 'Matt'],
   'Deuxième couleur': ['Segunda cor', 'Second colour'], 'Référence RAL (deuxième couleur)': ['Referência RAL (segunda cor)', 'RAL reference (second colour)'], 'Options – décors': ['Opções – decorações', 'Options – decorations'],
@@ -2737,7 +2751,7 @@ const I18N_SRC = {
   'Poteau de guidage': ['Poste de guia', 'Guide post'],
   'Dénivelé par mètre linéaire (%)': ['Desnível por metro linear (%)', 'Slope per linear metre (%)'],
   // respostas do Gonçalo (16/10/2026)
-  'Moteur Ferplay : jusqu’à 8 000 mm de largeur.': ['Motor Ferplay: até 8 000 mm de largura.', 'Ferplay motor: up to 8,000 mm wide.'],
+  'Moteur Ferplay : jusqu’à 8000 mm de largeur.': ['Motor Ferplay: até 8000 mm de largura.', 'Ferplay motor: up to 8000 mm wide.'],
   'Type de motorisation': ['Tipo de motorização', 'Motorisation type'], 'Non réversible': ['Não reversível', 'Non-reversible'], 'Réversible': ['Reversível', 'Reversible'],
   'Vitesse de fonctionnement': ['Velocidade de funcionamento', 'Operating speed'], '6 mètres/min': ['6 metros/min', '6 metres/min'], '9 mètres/min': ['9 metros/min', '9 metres/min'], '12 mètres/min': ['12 metros/min', '12 metres/min'],
   'Peu intensif': ['Pouco intensivo', 'Light use'],
@@ -2752,8 +2766,8 @@ const I18N_SRC = {
   'Extrémités contre le mur sans poteau : embase à visser (traverses)': ['Extremidades junto ao muro sem poste: base a aparafusar (travessas)', 'Ends against the wall without post: screw-on base (crossbars)'],
   'Extrémités contre le mur sans poteau': ['Extremidades junto ao muro sem poste', 'Ends against the wall without post'], 'étrier à visser (lisses)': ['estribo a aparafusar (réguas)', 'screw-on bracket (rails)'], 'embase à visser (traverses)': ['base a aparafusar (travessas)', 'screw-on base (crossbars)'],
   'Hauteur de la clôture hors muret – H3': ['Altura da vedação fora do muro – H3', 'Fence height above the low wall – H3'],
-  'Poteau de 2 100 mm : Eco 75x75.': ['Poste de 2 100 mm: Eco 75x75.', '2,100 mm post: Eco 75x75.'],
-  'Largeur de passage {l} mm : {n} meneau(x) obligatoire(s) (lames de 1 500 mm maximum).': ['Largura de passagem {l} mm: {n} montante(s) obrigatório(s) (lâminas de 1 500 mm no máximo).', 'Clear width {l} mm: {n} mullion(s) required (slats 1,500 mm maximum).'],
+  'Poteau de 2100 mm : Eco 75x75.': ['Poste de 2100 mm: Eco 75x75.', '2100 mm post: Eco 75x75.'],
+  'Largeur de passage {l} mm : {n} meneau(x) obligatoire(s) (lames de 1500 mm maximum).': ['Largura de passagem {l} mm: {n} montante(s) obrigatório(s) (lâminas de 1500 mm no máximo).', 'Clear width {l} mm: {n} mullion(s) required (slats 1500 mm maximum).'],
   'Meneaux obligatoires : {n}': ['Montantes obrigatórios: {n}', 'Mullions required: {n}'],
   'Portillon assorti (type)': ['Portão a condizer (tipo)', 'Matching gate (type)'], 'Pose du portillon': ['Instalação do portão', 'Gate mounting'], 'Autre': ['Outra', 'Other'],
   'Préciser la pose du portillon': ['Indicar a instalação do portão', 'Specify the gate mounting'], 'Portillon – pose': ['Portillon – instalação', 'Gate – mounting'],
@@ -2790,9 +2804,9 @@ const I18N_SRC = {
   'Bavolet en L incliné à 45° (longueurs de 500 mm sur platine, percé pour 3 fils)': ['Aba em L inclinada a 45° (comprimentos de 500 mm sobre placa, furada para 3 fios)', '45° inclined L-shaped overhang (500 mm lengths on plate, drilled for 3 wires)'],
   'Portail coulissant télescopique 2 vantaux (sur devis, ouverture 15 m maxi)': ['Portão de correr telescópico 2 folhas (sob orçamento, abertura 15 m máx.)', 'Telescopic sliding gate 2 leaves (on quotation, opening 15 m max.)'],
   'Portail coulissant télescopique 3 vantaux (sur devis, ouverture 12 m maxi)': ['Portão de correr telescópico 3 folhas (sob orçamento, abertura 12 m máx.)', 'Telescopic sliding gate 3 leaves (on quotation, opening 12 m max.)'],
-  'Kit Radius : coulissant d’angle à vantaux pivotants (sur devis, passage 7 m maxi, écoinçon > 1 500 mm)': ['Kit Radius: portão de correr em esquina com folhas pivotantes (sob orçamento, passagem 7 m máx., esquina > 1 500 mm)', 'Radius kit: corner sliding gate with pivoting leaves (on quotation, clear width 7 m max., corner > 1,500 mm)'],
+  'Kit Radius : coulissant d’angle à vantaux pivotants (sur devis, passage 7 m maxi, écoinçon > 1500 mm)': ['Kit Radius: portão de correr em esquina com folhas pivotantes (sob orçamento, passagem 7 m máx., esquina > 1500 mm)', 'Radius kit: corner sliding gate with pivoting leaves (on quotation, clear width 7 m max., corner > 1500 mm)'],
   'Kit Radius REVERSE (sur devis, passage 7 m maxi, écoinçon > 400 mm)': ['Kit Radius REVERSE (sob orçamento, passagem 7 m máx., esquina > 400 mm)', 'Radius REVERSE kit (on quotation, clear width 7 m max., corner > 400 mm)'],
-  'Poteau technique avec moteur intégré 150x150 (sur devis, hauteur 2 000 mm maxi)': ['Poste técnico com motor integrado 150x150 (sob orçamento, altura 2 000 mm máx.)', 'Technical post with built-in motor 150x150 (on quotation, height 2,000 mm max.)'],
+  'Poteau technique avec moteur intégré 150x150 (sur devis, hauteur 2000 mm maxi)': ['Poste técnico com motor integrado 150x150 (sob orçamento, altura 2000 mm máx.)', 'Technical post with built-in motor 150x150 (on quotation, height 2000 mm max.)'],
   'Coffre métallique pour moteur au sol (sur devis, 800 x 450 x 300 mm)': ['Caixa metálica para motor no chão (sob orçamento, 800 x 450 x 300 mm)', 'Metal box for floor motor (on quotation, 800 x 450 x 300 mm)'],
   'Kit Quick Folding : battants à ouverture accordéon (sur devis, 5 m maxi pour 1 battant, 10 m pour 2 battants)': ['Kit Quick Folding: folhas de abertura em acordeão (sob orçamento, 5 m máx. para 1 folha, 10 m para 2 folhas)', 'Quick Folding kit: accordion-opening leaves (on quotation, 5 m max. for 1 leaf, 10 m for 2 leaves)'],
   'Sachet de 25 bouchons non montés': ['Saco de 25 tampões não montados', 'Bag of 25 caps, not fitted'],
@@ -2809,26 +2823,26 @@ const I18N_SRC = {
   'Bleu turquoise': ['Azul turquesa', 'Turquoise blue'],
   'Vert jaune': ['Verde amarelado', 'Yellow green'],
   'Double thermolaquage (époxy + polyester)': ['Dupla termolacagem (epóxi + poliéster)', 'Double powder coating (epoxy + polyester)'],
-  'Type de portail': ['Tipo de portão', 'Gate type'],
+  'Type de portail': ['Tipo de portão', 'Gate type'], 'Portail 2 vantaux (battants)': ['Portão de 2 batentes', 'Gate with 2 leaves (swing)'], 'Portail coulissant / autoportant': ['Portão de correr / autoportante', 'Sliding / cantilever gate'], 'Choisissez le type de portail': ['Escolha o tipo de portão', 'Choose the gate type'], 'Les portiques n’existent que sur les portails coulissants': ['Os pórticos só existem nos portões de correr', 'Gantries only exist on sliding gates'], 'Ajouter aussi : Crapaudine à visser au sol réglable': ['Juntar também: rótula de chão regulável a aparafusar (crapaudine)', 'Also add: adjustable screw-on floor pivot (crapaudine)'],
   '2 vantaux': ['2 folhas', '2 leaves'],
   'Vantaux inégaux (tiercé)': ['Folhas desiguais (tiercé)', 'Unequal leaves (tiercé)'],
   'Monovantail': ['Folha única', 'Single leaf'],
-  'Monovantail : 4 000 mm maximum. Vantaux inégaux : le grand vantail (2/3 de la largeur) ne dépasse pas 4 000 mm.': ['Folha única: 4 000 mm no máximo. Folhas desiguais: a folha maior (2/3 da largura) não excede 4 000 mm.', 'Single leaf: 4,000 mm maximum. Unequal leaves: the larger leaf (2/3 of the width) does not exceed 4,000 mm.'],
+  'Monovantail : 4000 mm maximum. Vantaux inégaux : le grand vantail (2/3 de la largeur) ne dépasse pas 4000 mm.': ['Folha única: 4000 mm no máximo. Folhas desiguais: a folha maior (2/3 da largura) não excede 4000 mm.', 'Single leaf: 4000 mm maximum. Unequal leaves: the larger leaf (2/3 of the width) does not exceed 4000 mm.'],
   'Portail battant (monovantail)': ['Portão batente (folha única)', 'Swing gate (single leaf)'],
   'Portail battant (vantaux inégaux – tiercé)': ['Portão batente (folhas desiguais – tiercé)', 'Swing gate (unequal leaves – tiercé)'],
   'Série': ['Série', 'Series'],
-  'Série lourde (largeur supérieure à 6 000 mm)': ['Série pesada (largura superior a 6 000 mm)', 'Heavy series (width over 6,000 mm)'],
-  'Série média (largeur jusqu’à 6 000 mm)': ['Série média (largura até 6 000 mm)', 'Medium series (width up to 6,000 mm)'],
-  'Série lourde (largeur supérieure à 6 000 mm) : indiquée sur la fiche pour le bureau d’études.': ['Série pesada (largura superior a 6 000 mm): indicada na ficha para o gabinete técnico.', 'Heavy series (width over 6,000 mm): shown on the sheet for the design office.'],
-  'Série média (largeur jusqu’à 6 000 mm) : indiquée sur la fiche pour le bureau d’études.': ['Série média (largura até 6 000 mm): indicada na ficha para o gabinete técnico.', 'Medium series (width up to 6,000 mm): shown on the sheet for the design office.'],
+  'Série lourde (largeur supérieure à 6000 mm)': ['Série pesada (largura superior a 6000 mm)', 'Heavy series (width over 6000 mm)'],
+  'Série média (largeur jusqu’à 6000 mm)': ['Série média (largura até 6000 mm)', 'Medium series (width up to 6000 mm)'],
+  'Série lourde (largeur supérieure à 6000 mm) : indiquée sur la fiche pour le bureau d’études.': ['Série pesada (largura superior a 6000 mm): indicada na ficha para o gabinete técnico.', 'Heavy series (width over 6000 mm): shown on the sheet for the design office.'],
+  'Série média (largeur jusqu’à 6000 mm) : indiquée sur la fiche pour le bureau d’études.': ['Série média (largura até 6000 mm): indicada na ficha para o gabinete técnico.', 'Medium series (width up to 6000 mm): shown on the sheet for the design office.'],
   'Autre cote (hors standard : plus-value de 15 %)': ['Outra cota (fora do standard: acréscimo de 15 %)', 'Other dimension (non-standard: 15 % surcharge)'],
   'Hauteur (autre cote)': ['Altura (outra cota)', 'Height (other dimension)'],
   'Largeur de passage (autre cote)': ['Largura de passagem (outra cota)', 'Clear width (other dimension)'],
   'À partir de {n} panneaux ; en dessous : plus-value de 10 %.': ['A partir de {n} painéis; abaixo disso: acréscimo de 10 %.', 'From {n} panels; below that: 10 % surcharge.'],
   'Cote hors standard : plus-value de 15 % sur la cote supérieure': ['Cota fora do standard: acréscimo de 15 % sobre a cota superior', 'Non-standard dimension: 15 % surcharge on the upper dimension'],
   'Moins de 10 panneaux : plus-value de 10 %': ['Menos de 10 painéis: acréscimo de 10 %', 'Fewer than 10 panels: 10 % surcharge'],
-  'A45 coulissant : largeur supérieure à 16 000 mm : à étudier par Ferplay': ['A45 de correr: largura superior a 16 000 mm: a estudar pela Ferplay', 'A45 sliding: width over 16,000 mm: to be studied by Ferplay'],
-  'A45 autoporté : largeur supérieure à 12 000 mm : à étudier par Ferplay': ['A45 autoportante: largura superior a 12 000 mm: a estudar pela Ferplay', 'A45 self-supporting: width over 12,000 mm: to be studied by Ferplay'],
+  'A45 coulissant : largeur supérieure à 16000 mm : à étudier par Ferplay': ['A45 de correr: largura superior a 16000 mm: a estudar pela Ferplay', 'A45 sliding: width over 16000 mm: to be studied by Ferplay'],
+  'A45 autoporté : largeur supérieure à 12000 mm : à étudier par Ferplay': ['A45 autoportante: largura superior a 12000 mm: a estudar pela Ferplay', 'A45 self-supporting: width over 12000 mm: to be studied by Ferplay'],
   'Option « {o} » : largeur maximum {n} mm : à étudier par Ferplay': ['Opção «{o}»: largura máxima {n} mm: a estudar pela Ferplay', 'Option “{o}”: maximum width {n} mm: to be studied by Ferplay'],
   'Option « {o} » : hauteur maximum {n} mm : à étudier par Ferplay': ['Opção «{o}»: altura máxima {n} mm: a estudar pela Ferplay', 'Option “{o}”: maximum height {n} mm: to be studied by Ferplay'],
   'Kit de motorisation': ['Kit de motorização', 'Motorisation kit'],
@@ -2891,9 +2905,9 @@ const I18N_SRC = {
   'Tout tôlé': ['Totalmente em chapa', 'Fully sheet-clad'],
   'Soubassement tôlé (hauteur)': ['Rodapé em chapa (altura)', 'Sheet-metal base (height)'],
   'Soubassement tôlé > 500 mm et ≤ 600 mm (passage jusqu’à 5 m)': ['Rodapé em chapa > 500 mm e ≤ 600 mm (passagem até 5 m)', 'Sheet-metal base > 500 mm and ≤ 600 mm (passage up to 5 m)'],
-  'Soubassement tôlé > 600 mm et ≤ 1 250 mm (passage jusqu’à 5 m)': ['Rodapé em chapa > 600 mm e ≤ 1 250 mm (passagem até 5 m)', 'Sheet-metal base > 600 mm and ≤ 1,250 mm (passage up to 5 m)'],
+  'Soubassement tôlé > 600 mm et ≤ 1250 mm (passage jusqu’à 5 m)': ['Rodapé em chapa > 600 mm e ≤ 1250 mm (passagem até 5 m)', 'Sheet-metal base > 600 mm and ≤ 1250 mm (passage up to 5 m)'],
   'Tôle en applique sur barreaux': ['Chapa aplicada sobre as barras', 'Sheet applied over the bars'],
-  'Tôle microperforée R8 T12 (hauteur maxi 2 000 / 2 500)': ['Chapa microperfurada R8 T12 (altura máxima 2 000 / 2 500)', 'Micro-perforated sheet R8 T12 (maximum height 2,000 / 2,500)'],
+  'Tôle microperforée R8 T12 (hauteur maxi 2000 / 2500)': ['Chapa microperfurada R8 T12 (altura máxima 2000 / 2500)', 'Micro-perforated sheet R8 T12 (maximum height 2,000 / 2,500)'],
   'Ossature renforcée': ['Estrutura reforçada', 'Reinforced frame'],
   'Ossature renforcée 50x50': ['Estrutura reforçada 50x50', 'Reinforced frame 50x50'], 'Ossature renforcée 60x60': ['Estrutura reforçada 60x60', 'Reinforced frame 60x60'],
   'Grille en pente': ['Grade em rampa', 'Sloping grille'], 'Grille en arrondie (cintrée)': ['Grade arredondada (curva)', 'Rounded (curved) grille'],
@@ -2943,13 +2957,13 @@ const I18N_SRC = {
   'MC 6025 RL – main courante rectangulaire 60x25 laquée': ['MC 6025 RL – corrimão retangular 60x25 lacado', 'MC 6025 RL – rectangular handrail 60x25, lacquered'],
   'MC 50 DL – main courante ronde Ø50 laquée': ['MC 50 DL – corrimão redondo Ø50 lacado', 'MC 50 DL – round handrail Ø50, lacquered'],
   'Portillon barreaudé (barreaux 20x20)': ['Portão pedonal de barras (barras 20x20)', 'Barred gate (20x20 bars)'], 'Portillon vitré (stadip 4.4/2)': ['Portão pedonal de vidro (stadip 4.4/2)', 'Glass gate (stadip 4.4/2)'], 'Portillon tôlé (tôle 3 mm)': ['Portão pedonal em chapa (chapa 3 mm)', 'Sheet-metal gate (3 mm sheet)'],
-  'Séparateur de balcons (H 600 à 2 000)': ['Separador de varandas (H 600 a 2 000)', 'Balcony separator (H 600 to 2,000)'],
-  'Pare-vent et séparateur de terrasse (H 900 à 2 000)': ['Para-vento e separador de terraço (H 900 a 2 000)', 'Wind screen and terrace separator (H 900 to 2,000)'],
-  'Brise-vue et pare-vent de terrasse (H maxi 1 500)': ['Quebra-vista e para-vento de terraço (H máx. 1 500)', 'Privacy and wind screen for terraces (H max. 1,500)'],
+  'Séparateur de balcons (H 600 à 2000)': ['Separador de varandas (H 600 a 2000)', 'Balcony separator (H 600 to 2,000)'],
+  'Pare-vent et séparateur de terrasse (H 900 à 2000)': ['Para-vento e separador de terraço (H 900 a 2000)', 'Wind screen and terrace separator (H 900 to 2,000)'],
+  'Brise-vue et pare-vent de terrasse (H maxi 1500)': ['Quebra-vista e para-vento de terraço (H máx. 1500)', 'Privacy and wind screen for terraces (H max. 1,500)'],
   'Séparateur de balcons': ['Separador de varandas', 'Balcony separator'], 'Pare-vent et séparateur de terrasse': ['Para-vento e separador de terraço', 'Wind screen and terrace separator'], 'Brise-vue et pare-vent de terrasse': ['Quebra-vista e para-vento de terraço', 'Privacy and wind screen for terraces'],
   'Portillon barreaudé': ['Portão pedonal de barras', 'Barred gate'], 'Portillon vitré': ['Portão pedonal de vidro', 'Glass gate'], 'Portillon tôlé': ['Portão pedonal em chapa', 'Sheet-metal gate'],
   'Finition du profil': ['Acabamento do perfil', 'Profile finish'], 'Anodisé naturel': ['Anodizado natural', 'Natural anodised'], 'Thermolaqué': ['Termolacado', 'Powder-coated'],
-  'Hauteur (mm, maximum 1 100)': ['Altura (mm, máximo 1 100)', 'Height (mm, maximum 1,100)'],
+  'Hauteur (mm, maximum 1100)': ['Altura (mm, máximo 1100)', 'Height (mm, maximum 1,100)'],
   'Vitrage feuilleté (épaisseurs verre – PVB – verre)': ['Vidro laminado (espessuras vidro – PVB – vidro)', 'Laminated glass (glass – PVB – glass thicknesses)'],
   'Sans vitrage (commande sans vitrage)': ['Sem vidro (encomenda sem vidro)', 'Without glass (order without glass)'],
   'Profil d’évacuation d’eau (sous le rail)': ['Perfil de drenagem de água (sob o carril)', 'Water drainage profile (under the rail)'],
@@ -2957,10 +2971,10 @@ const I18N_SRC = {
   'Profil de recouvrement type main courante (PU 200)': ['Perfil de cobertura tipo corrimão (PU 200)', 'Covering profile, handrail type (PU 200)'],
   'Fixation murale (étriers)': ['Fixação mural (estribos)', 'Wall fixing (brackets)'],
   'Longueur de la main courante (livrée en sur-longueur)': ['Comprimento do corrimão (fornecido com sobrecomprimento)', 'Handrail length (supplied over-length)'],
-  '≤ 2 900 mm': ['≤ 2 900 mm', '≤ 2,900 mm'], '> 2 900 mm': ['> 2 900 mm', '> 2,900 mm'],
+  '≤ 2900 mm': ['≤ 2900 mm', '≤ 2900 mm'], '> 2900 mm': ['> 2900 mm', '> 2900 mm'],
   'Fixation de la rampe': ['Fixação da rampa', 'Ramp fixing'], 'Étriers muraux': ['Estribos murais', 'Wall brackets'],
   'Poteaux GP 423 (support de main courante amovible)': ['Postes GP 423 (suporte de corrimão amovível)', 'GP 423 posts (removable handrail support)'],
-  'Étriers (entre fixations 1 400 mm maximum)': ['Estribos (entre fixações 1 400 mm no máximo)', 'Brackets (1,400 mm maximum between fixings)'],
+  'Étriers (entre fixations 1400 mm maximum)': ['Estribos (entre fixações 1400 mm no máximo)', 'Brackets (1400 mm maximum between fixings)'],
   'Étrier standard': ['Estribo standard', 'Standard bracket'], 'Étrier rallongé (70 mm maximum, à recouper)': ['Estribo alongado (70 mm no máximo, a cortar)', 'Extended bracket (70 mm maximum, to be trimmed)'],
   'Étriers – quantité': ['Estribos – quantidade', 'Brackets – quantity'],
   'Poteaux de rampe 40x40 (H 980 mm, en kit)': ['Postes de rampa 40x40 (H 980 mm, em kit)', 'Ramp posts 40x40 (H 980 mm, in kit)'],
@@ -2970,7 +2984,7 @@ const I18N_SRC = {
   'GY 428 – sabot pose à l’anglaise': ['GY 428 – sapata para instalação à inglesa', 'GY 428 – side-mounting shoe'], 'LGA 250 R – cigare à sceller (rosace incluse)': ['LGA 250 R – charuto de selar (roseta incluída)', 'LGA 250 R – cigar to seal (rosette included)'],
   'LCR 50 D – cross pour MC 50 D': ['LCR 50 D – cross para MC 50 D', 'LCR 50 D – cross for MC 50 D'],
   'POF1 – Entre tableaux': ['POF1 – Entre vãos', 'POF1 – Between reveals'], 'POF2 – Entre maçonnerie et poteau aluminium': ['POF2 – Entre alvenaria e poste de alumínio', 'POF2 – Between masonry and aluminium post'], 'POF3 – Entre 2 poteaux aluminium': ['POF3 – Entre 2 postes de alumínio', 'POF3 – Between 2 aluminium posts'],
-  'Largeur du portillon (mm ; tarifée 800 ou 1 200)': ['Largura do portão pedonal (mm; tarifada 800 ou 1 200)', 'Gate width (mm; priced at 800 or 1,200)'],
+  'Largeur du portillon (mm ; tarifée 800 ou 1200)': ['Largura do portão pedonal (mm; tarifada 800 ou 1200)', 'Gate width (mm; priced at 800 or 1,200)'],
   'Passage libre de 900 mm minimum (ERP).': ['Passagem livre de 900 mm no mínimo (ERP).', 'Clear passage of 900 mm minimum (ERP).'],
   'Hauteur (mm)': ['Altura (mm)', 'Height (mm)'], 'Sens d’ouverture (vue extérieure)': ['Sentido de abertura (vista exterior)', 'Opening direction (exterior view)'], '2 poteaux sur platine': ['2 postes com placa de base', '2 posts on base plate'],
   '20x20': ['20x20', '20x20'], '50x20': ['50x20', '50x20'], '100x20': ['100x20', '100x20'],
@@ -2981,7 +2995,7 @@ const I18N_SRC = {
   'Produit non conforme aux normes garde-corps : il ne peut pas remplacer un garde-corps.': ['Produto não conforme com as normas de guarda-corpos: não pode substituir um guarda-corpos.', 'Product not compliant with guardrail standards: it cannot replace a guardrail.'],
   'Poteau d’angle variable (ou angle ajustable)': ['Poste de ângulo variável (ou ângulo ajustável)', 'Variable-angle post (or adjustable angle)'], 'Poteau de fin': ['Poste de fim', 'End post'],
   'Partie basse': ['Parte inferior', 'Lower part'], 'Tôle 30/10': ['Chapa 30/10', 'Sheet 30/10'], 'Lames horizontales 200x20': ['Lâminas horizontais 200x20', 'Horizontal slats 200x20'], 'Autre (à préciser dans les observations)': ['Outra (a especificar nas observações)', 'Other (to be specified in the remarks)'],
-  'Hauteur (mm, maximum 1 500)': ['Altura (mm, máximo 1 500)', 'Height (mm, maximum 1,500)'],
+  'Hauteur (mm, maximum 1500)': ['Altura (mm, máximo 1500)', 'Height (mm, maximum 1,500)'],
   'Lames 100x20': ['Lâminas 100x20', 'Slats 100x20'], 'Lames 150x20': ['Lâminas 150x20', 'Slats 150x20'], 'Lames 200x20': ['Lâminas 200x20', 'Slats 200x20'], 'Lames 300x20': ['Lâminas 300x20', 'Slats 300x20'], 'Tôle plane 30/10': ['Chapa lisa 30/10', 'Flat sheet 30/10'],
   'Poses spécifiques (tarif)': ['Instalações específicas (tarif)', 'Specific mountings (price list)'], 'Options et adaptations techniques (tarif)': ['Opções e adaptações técnicas (tarif)', 'Technical options and adaptations (price list)'],
   'POA2 – Pose à l’anglaise, déport 50 mm (sabot SA5)': ['POA2 – Instalação à inglesa, avanço de 50 mm (sapata SA5)', 'POA2 – Side mounting, 50 mm offset (shoe SA5)'], 'POP1 – Pose en pente (sabot SD5)': ['POP1 – Instalação em rampa (sapata SD5)', 'POP1 – Mounting on a slope (shoe SD5)'],
@@ -3016,7 +3030,7 @@ const I18N_SRC = {
   // [ANCORA-P3-ALU]
   'Combinaison largeur × hauteur non prévue au tarif ({l} × {h} mm) : à étudier par Ferplay': ['Combinação largura × altura não prevista na tabela ({l} × {h} mm): a estudar pela Ferplay', 'Width × height combination not in the price list ({l} × {h} mm): to be studied by Ferplay'],
   'Coulissant en forme {f} : hauteur maximum côté montants {hm} mm et largeur de passage maximum {lm} mm ({l} × {h} mm) : à étudier par Ferplay': ['Deslizante em forma {f}: altura máxima do lado dos montantes {hm} mm e largura de passagem máxima {lm} mm ({l} × {h} mm): a estudar pela Ferplay', 'Sliding gate in shape {f}: maximum height at the posts {hm} mm and maximum clear width {lm} mm ({l} × {h} mm): to be studied by Ferplay'],
-  'Andalousite : hauteur maximum à la flèche 2 000 mm (H3 = {h3} mm) : à étudier par Ferplay': ['Andalousite: altura máxima à flecha 2 000 mm (H3 = {h3} mm): a estudar pela Ferplay', 'Andalousite: maximum height at the arch 2,000 mm (H3 = {h3} mm): to be studied by Ferplay'],
+  'Andalousite : hauteur maximum à la flèche 2000 mm (H3 = {h3} mm) : à étudier par Ferplay': ['Andalousite: altura máxima à flecha 2000 mm (H3 = {h3} mm): a estudar pela Ferplay', 'Andalousite: maximum height at the arch 2000 mm (H3 = {h3} mm): to be studied by Ferplay'],
   'Vantaux tiercés : le plus grand vantail ({v} mm) dépasse {m} mm : à étudier par Ferplay': ['Folhas desiguais: a folha maior ({v} mm) excede {m} mm: a estudar pela Ferplay', 'Unequal leaves: the larger leaf ({v} mm) exceeds {m} mm: to be studied by Ferplay'],
   'Motorisation intégrée {k} : largeur du vantail {w} mm au-delà de {m} mm : à étudier par Ferplay': ['Motorização integrada {k}: largura da folha {w} mm acima de {m} mm: a estudar pela Ferplay', 'Integrated motor {k}: leaf width {w} mm above {m} mm: to be studied by Ferplay'],
   'Motorisation intégrée {k} : surface du vantail {s} m² au-delà de {m} m² (vantail plein) : à étudier par Ferplay': ['Motorização integrada {k}: superfície da folha {s} m² acima de {m} m² (folha cheia): a estudar pela Ferplay', 'Integrated motor {k}: leaf area {s} m² above {m} m² (solid leaf): to be studied by Ferplay'],
@@ -3057,7 +3071,7 @@ const I18N_SRC = {
   'Queue': ['Cauda', 'Tail'],
   'Queue barreaudée': ['Cauda com barras', 'Barred tail'],
   'Queue pleine': ['Cauda cheia', 'Solid tail'],
-  'Rollers à fixer au sol : garantie de 2 ans ou 10 000 cycles (le premier atteint).': ['Rollers a fixar ao chão: garantia de 2 anos ou 10 000 ciclos (o que ocorrer primeiro).', 'Rollers fixed to the ground: 2-year or 10,000-cycle warranty (whichever comes first).'],
+  'Rollers à fixer au sol : garantie de 2 ans ou 10000 cycles (le premier atteint).': ['Rollers a fixar ao chão: garantia de 2 anos ou 10000 ciclos (o que ocorrer primeiro).', 'Rollers fixed to the ground: 2-year or 10,000-cycle warranty (whichever comes first).'],
   'À visser (acier zingué 75 x 3 mm)': ['Aparafusar (aço zincado 75 x 3 mm)', 'Screw-fixed (galvanised steel 75 x 3 mm)'],
   'Selon le tarif : guidage {g}{g2}, réception {r}.': ['Segundo a tarifa: guiamento {g}{g2}, receção {r}.', 'According to the price list: guide {g}{g2}, reception {r}.'],
   'poteau simple': ['poste simples', 'single post'],
@@ -3077,7 +3091,7 @@ const I18N_SRC = {
   'Poteaux 100x100': ['Postes 100x100', 'Posts 100x100'],
   'Poteaux 150x150': ['Postes 150x150', 'Posts 150x150'],
   'Poteaux 200x200': ['Postes 200x200', 'Posts 200x200'],
-  'Monovantail de plus de 3 000 mm : ossature en tube 100x100, sur consultation : à étudier par Ferplay': ['Folha única com mais de 3 000 mm: estrutura em tubo 100x100, sob consulta: a estudar pela Ferplay', 'Single leaf over 3,000 mm: 100x100 tube frame, on request: to be studied by Ferplay'],
+  'Monovantail de plus de 3000 mm : ossature en tube 100x100, sur consultation : à étudier par Ferplay': ['Folha única com mais de 3000 mm: estrutura em tubo 100x100, sob consulta: a estudar pela Ferplay', 'Single leaf over 3000 mm: 100x100 tube frame, on request: to be studied by Ferplay'],
   'Monovantail : plus-value de 15 % (renfort d’ossature et de pivot)': ['Folha única: sobrecusto de 15 % (reforço da estrutura e do pivô)', 'Single leaf: 15 % surcharge (reinforced frame and pivot)'],
   'Prémontage des pattes moteur du client (cotes d’implantation à fournir avant fabrication)': ['Pré-montagem das patas do motor do cliente (cotas de implantação a fornecer antes do fabrico)', 'Pre-fitting of the customer’s motor brackets (installation dimensions to be supplied before manufacture)'],
   'Pré-équipement : prémontage du palpeur embarqué, passage du câble d’alimentation et douchette passe-fils': ['Pré-equipamento: pré-montagem do sensor de bordo, passagem do cabo de alimentação e passa-cabos', 'Pre-equipment: pre-fitting of the on-board sensor, power cable routing and cable pass-through'],
@@ -3088,10 +3102,10 @@ const I18N_SRC = {
   'Combinaison largeur × hauteur non disponible dans le tarif : à étudier par Ferplay': ['Combinação largura × altura não disponível na tarifa: a estudar pela Ferplay', 'Width × height combination not available in the price list: to be studied by Ferplay'],
   'Les ferme-portes sont vendus avec poteaux Ferplay : à étudier par Ferplay': ['Os braços de mola são vendidos com postes Ferplay: a estudar pela Ferplay', 'Door closers are sold with Ferplay posts: to be studied by Ferplay'],
   'Bavolets sur coulissant : sur consultation (modification du système de guidage) : à étudier par Ferplay': ['Bavolets em portão deslizante: sob consulta (alteração do sistema de guiamento): a estudar pela Ferplay', 'Overhang brackets on sliding gate: on request (guide system modification): to be studied by Ferplay'],
-  'Tôle microperforée : hauteur maximum 2 000 mm : à étudier par Ferplay': ['Chapa microperfurada: altura máxima 2 000 mm: a estudar pela Ferplay', 'Micro-perforated sheet: maximum height 2,000 mm: to be studied by Ferplay'],
+  'Tôle microperforée : hauteur maximum 2000 mm : à étudier par Ferplay': ['Chapa microperfurada: altura máxima 2000 mm: a estudar pela Ferplay', 'Micro-perforated sheet: maximum height 2000 mm: to be studied by Ferplay'],
   'Aucun kit du tarif pour cette largeur : à étudier par Ferplay.': ['Nenhum kit da tarifa para esta largura: a estudar pela Ferplay.', 'No price-list kit for this width: to be studied by Ferplay.'],
   'Aucun kit du tarif pour cette largeur : à étudier par Ferplay': ['Nenhum kit da tarifa para esta largura: a estudar pela Ferplay', 'No price-list kit for this width: to be studied by Ferplay'],
-  'Coffre technique pour collectifs et petits locaux industriels (2 000 ou 2 500 mm de haut maximum).': ['Coffre técnico para coletivos e pequenos locais industriais (2 000 ou 2 500 mm de altura máxima).', 'Technical cabinet for collective housing and small industrial premises (2,000 or 2,500 mm high maximum).'],
+  'Coffre technique pour collectifs et petits locaux industriels (2000 ou 2500 mm de haut maximum).': ['Coffre técnico para coletivos e pequenos locais industriais (2000 ou 2500 mm de altura máxima).', 'Technical cabinet for collective housing and small industrial premises (2,000 or 2500 mm high maximum).'],
   '2 vantaux, passage 4, 5 et 6 m, 50 à 100 cycles/jour (petits collectifs ou petits locaux tertiaires)': ['2 folhas, passagem de 4, 5 e 6 m, 50 a 100 ciclos/dia (pequenos coletivos ou pequenos locais terciários)', '2 leaves, 4, 5 and 6 m opening, 50 to 100 cycles/day (small collective housing or small commercial premises)'],
   '2 vantaux, passage 6 et 8 m, 200 à 300 cycles/jour (usage collectif et industriel)': ['2 folhas, passagem de 6 e 8 m, 200 a 300 ciclos/dia (uso coletivo e industrial)', '2 leaves, 6 and 8 m opening, 200 to 300 cycles/day (collective and industrial use)'],
   'moteurs enterrés certifiés, 2 vantaux, passage 5 m, 100 cycles/jour': ['motores enterrados certificados, 2 folhas, passagem de 5 m, 100 ciclos/dia', 'certified buried motors, 2 leaves, 5 m opening, 100 cycles/day'],
@@ -3139,7 +3153,7 @@ const I18N_SRC = {
   'Ventouse 300 kg rectangulaire + trappe de visite classic': ['Ventosa retangular classic de 300 kg + tampa de visita', 'Classic 300 kg rectangular electromagnetic lock + inspection hatch'],
   'Douchette passe-fils (pour serrure ou ventouse)': ['Passa-cabos (para fechadura ou ventosa)', 'Cable pass-through (for lock or electromagnetic lock)'],
   'Découpe laser sur une tôle (8 motifs Ferplay)': ['Corte a laser numa chapa (8 motivos Ferplay)', 'Laser cutting on a sheet (8 Ferplay patterns)'],
-  'Découpe laser : croix de Saint André (500 mm de haut x 1 500 à 2 000 mm de long maxi)': ['Corte a laser: cruz de Santo André (500 mm de altura x 1 500 a 2 000 mm de comprimento máx.)', 'Laser cutting: Saint Andrew’s cross (500 mm high x 1,500 to 2,000 mm long max.)'],
+  'Découpe laser : croix de Saint André (500 mm de haut x 1500 à 2000 mm de long maxi)': ['Corte a laser: cruz de Santo André (500 mm de altura x 1500 a 2000 mm de comprimento máx.)', 'Laser cutting: Saint Andrew’s cross (500 mm high x 1,500 to 2000 mm long max.)'],
   'Platines pour gonds orthogonaux (galvanisé peint, battants sans poteaux)': ['Placas para dobradiças ortogonais (galvanizado pintado, batentes sem postes)', 'Plates for orthogonal hinges (painted galvanised, swing gates without posts)'],
   'Tôle microperforée (3 mm, Ø5 R5 T8)': ['Chapa microperfurada (3 mm, Ø5 R5 T8)', 'Micro-perforated sheet (3 mm, Ø5 R5 T8)'],
   'Montée sur cadre (sans le barreaudage)': ['Montada no caixilho (sem as barras)', 'Mounted in the frame (without bars)'],
@@ -3147,7 +3161,7 @@ const I18N_SRC = {
   'Tôle en partie basse (aluminium 30/10, traverse intermédiaire comprise)': ['Chapa na parte inferior (alumínio 30/10, travessa intermédia incluída)', 'Sheet in the lower part (aluminium 30/10, intermediate crossbar included)'],
   'Soubassement jusqu’à 500 mm de hauteur': ['Rodapé até 500 mm de altura', 'Lower panel up to 500 mm high'],
   'Soubassement de plus de 500 mm jusqu’à 600 mm': ['Rodapé de mais de 500 mm até 600 mm', 'Lower panel over 500 mm up to 600 mm'],
-  'Soubassement de plus de 600 mm jusqu’à 1 000 mm': ['Rodapé de mais de 600 mm até 1 000 mm', 'Lower panel over 600 mm up to 1,000 mm'],
+  'Soubassement de plus de 600 mm jusqu’à 1000 mm': ['Rodapé de mais de 600 mm até 1000 mm', 'Lower panel over 600 mm up to 1000 mm'],
   'Portail tout tôlé aluminium 20/10': ['Portão todo em chapa de alumínio 20/10', 'Fully sheet-clad aluminium gate 20/10'],
   'Tôle montée dans le cadre (sans le barreaudage)': ['Chapa montada no caixilho (sem as barras)', 'Sheet mounted in the frame (without bars)'],
   'KIT Nº1 FP-ECO irréversible': ['KIT Nº1 FP-ECO irreversível', 'KIT Nº1 FP-ECO irreversible'],
@@ -3158,12 +3172,12 @@ const I18N_SRC = {
   'Livrés en sachet (non montés)': ['Entregues em saco (não montados)', 'Supplied in a bag (not fitted)'],
   'Montés en usine': ['Montados em fábrica', 'Fitted in the factory'],
   'À partir de 10 panneaux ; en dessous : plus-value de 10 %.': ['A partir de 10 painéis; abaixo: sobrecusto de 10 %.', 'From 10 panels; below that: 10 % surcharge.'],
-  'Panneau de 2 000 mm de large (entraxe des poteaux 2,08 m).': ['Painel de 2 000 mm de largura (entre eixos dos postes 2,08 m).', '2,000 mm wide panel (post spacing 2.08 m).'],
+  'Panneau de 2000 mm de large (entraxe des poteaux 2,08 m).': ['Painel de 2000 mm de largura (entre eixos dos postes 2,08 m).', '2000 mm wide panel (post spacing 2.08 m).'],
   'En principe : nombre de panneaux + 1.': ['Em princípio: número de painéis + 1.', 'Normally: number of panels + 1.'],
   'Poteaux carrés 80x80 (aluminium)': ['Postes quadrados 80x80 (alumínio)', 'Square posts 80x80 (aluminium)'],
   'Poteaux ronds Ø60 x 3 (aluminium)': ['Postes redondos Ø60 x 3 (alumínio)', 'Round posts Ø60 x 3 (aluminium)'],
   'Nombre de poteaux': ['Número de postes', 'Number of posts'],
-  'Longueur totale : {n} mm (panneaux de 2 000 mm)': ['Comprimento total: {n} mm (painéis de 2 000 mm)', 'Total length: {n} mm (2,000 mm panels)'],
+  'Longueur totale : {n} mm (panneaux de 2000 mm)': ['Comprimento total: {n} mm (painéis de 2000 mm)', 'Total length: {n} mm (2000 mm panels)'],
   'Tubes ronds Ø25': ['Tubos redondos Ø25', 'Round tubes Ø25'],
   'Tubes carrés 25x25': ['Tubos quadrados 25x25', 'Square tubes 25x25'],
   'Bouchons': ['Tampões', 'Caps'],
@@ -3227,7 +3241,7 @@ const KIND_SHORT = { battant: 'Portail battant', coulissant: 'Portail coulissant
 const ACC_MOTEUR = ['Émetteur 2 fonctions', 'Émetteur 4 canaux', 'Digicode radio', 'Ampli de boucle magnétique', 'Pilotage radio par GSM avec horloge', 'Récepteur radio', 'Interphone vidéo filaire'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const fmt = n => Number(n).toLocaleString('fr-FR');
+const fmt = n => Number(n).toLocaleString('fr-FR', { useGrouping: false });   // 17/11/2026 (Gonçalo): nunca separador de milhares no ARC (1300, não 1300 nem 1,300)
 
 // ======================= estado =======================
 let S = { client: {}, products: [] };
@@ -3316,6 +3330,11 @@ const isVentouse = o => /Ventouse 300kg/i.test(o.label);
 const INTERNE_OPC = ['fixPot', 'potSec', 'serMan', 'typeserrure', 'coul', 'ralAutre', 'trait', 'ral', 'sens', 'galvaLaq', 'm_marque', 'm_modele'];   // 03/11/2026: o tipo de pose também é facultativo no interno   // 'sens' = sentido de abertura
 // 12/11/2026 (Gonçalo): facultativos para TODOS (cliente incluído): secção dos poteaux (potSec), finition (fin), galva / thermolaquage (galvaLaq), tipo de pose (pose), marca e modelo da fechadura (m_marque, m_modele)
 const TODOS_OPC = ['potSec', 'galvaLaq', 'finGac', 'm_marque', 'm_modele'];   // 12/11/2026: pose, fix e fin (texturé/mat) voltaram a ser obrigatórios   // fix = «Fixation» da secção Pose do Habitat (ao lado do tipo de pose)   // finGac = thermolaquage da galva à chaud (Habitat Fer)
+// 17/11/2026 (feedback interno, Ferro industrial): Texturé / Mat («Finition de la couleur») só se pergunta com chapa, e é facultativo.
+// Chapa nos industriais = «Tôle en partie basse électrozinguée 20/10» ou «Portail tout tolé 20/10».
+const chapaInd = (m, v) => (m.options || []).some(o => v['o' + o.id] && /^(t[ôo]le en partie basse électrozinguée 20\/10|portail tout tol[ée] 20\/10)/i.test(String(o.label || '').trim()));
+// 17/11/2026: campo «Nom du modèle» (versão interna, variante «À définir»): vai para o MODELE do ARC
+const nomModeleField = v => { const mn = /^[àa] d[ée]finir$/i.test(v.modeleNom || '') ? '' : (v.modeleNom || ''); return `<div class="f"><label for="e_modeleNom">${t('Nom du modèle')}</label><input type="text" id="e_modeleNom" name="e_modeleNom" value="${esc(mn)}" placeholder="${esc(t('Si le modèle n’est pas dans la liste'))}"></div>`; };
 function fieldsFor(m, v) {
   const F = fieldsForAll(m, v);
   for (const f of F) if (f.req && (TODOS_OPC.includes(f.k) || (INTERNE && INTERNE_OPC.includes(f.k)))) { f.req = false; f.autoOk = true; }
@@ -3360,13 +3379,13 @@ function fieldsForAll(m, v) {
     }
     add({ k: 'qt', sec: 'Dimensions', label: 'Quantité', type: 'number', req: true, min: 1, max: 99, hard: true });
     // 27/10/2026 (decisão 7): A45 autoporté barreaudé: série média (≤ 6 m) ou lourde (> 6 m), deduzida da largura e escrita no ARC
-    if (m.serieAuto && Number(v.L) > 0) add({ k: 'serieInfo', sec: 'Dimensions', type: 'info', text: Number(v.L) > 6000 ? t('Série lourde (largeur supérieure à 6 000 mm) : indiquée sur la fiche pour le bureau d’études.') : t('Série média (largeur jusqu’à 6 000 mm) : indiquée sur la fiche pour le bureau d’études.') });
+    if (m.serieAuto && Number(v.L) > 0) add({ k: 'serieInfo', sec: 'Dimensions', type: 'info', text: Number(v.L) > 6000 ? t('Série lourde (largeur supérieure à 6000 mm) : indiquée sur la fiche pour le bureau d’études.') : t('Série média (largeur jusqu’à 6000 mm) : indiquée sur la fiche pour le bureau d’études.') });
   }
   // --- abertura / poteaux
   if (m.sens && m.sens.length) add({ k: 'sens', sec: 'Ouverture', label: "Sens d'ouverture (vue extérieure)", type: 'radio', opts: m.sens, req: true });
   // 27/10/2026 (decisão 11): Type de portail (2 vantaux / inégaux tiercé / monovantail); monovantail e vantail maior ≤ 4 m nos Herculeos/Cannisse e A49c/CA5, livre no A49
   if (m.vantaux) { const Lv = Number(v.L) || 0, lim = !!m.vantMax4;
-    add({ k: 'vantaux', sec: 'Ouverture', label: 'Type de portail', type: 'radio', opts: [['2v', '2 vantaux'], ['tierce', 'Vantaux inégaux (tiercé)', lim && Lv > 6000], ['mono', 'Monovantail', lim && Lv > 4000]], req: true, hint: lim ? t('Monovantail : 4 000 mm maximum. Vantaux inégaux : le grand vantail (2/3 de la largeur) ne dépasse pas 4 000 mm.') : '' }); }
+    add({ k: 'vantaux', sec: 'Ouverture', label: 'Type de portail', type: 'radio', opts: [['2v', '2 vantaux'], ['tierce', 'Vantaux inégaux (tiercé)', lim && Lv > 6000], ['mono', 'Monovantail', lim && Lv > 4000]], req: true, hint: lim ? t('Monovantail : 4000 mm maximum. Vantaux inégaux : le grand vantail (2/3 de la largeur) ne dépasse pas 4000 mm.') : '' }); }
   if (portail && m.ouv.length > 1) add({ k: 'ouv', sec: 'Ouverture', label: "Type d'ouverture", type: 'radio', opts: m.ouv.map(o => [o, { manuel: 'Manuelle', motorisable: 'Motorisable (prêt à motoriser, sans serrure)', motorise: 'Motorisée (sans serrure)' }[o]]), req: true });
   const ouv = m.ouv.length === 1 ? m.ouv[0] : v.ouv;
   // 05/11/2026 (Sónia): primeiro «Serrure : Oui / Non» (marca a caixa do ARC); só se for Oui pergunta qual (vai para as Observations)
@@ -3411,7 +3430,7 @@ function fieldsForAll(m, v) {
   if (m.rail || (INTERNE && m.kind === 'coulissant')) add({ k: 'rail', sec: 'Poteaux', label: 'Rail au sol', type: 'radio', opts: [['visser', 'À visser (tôle pliée 4 × 75 mm)'], ['sceller', 'À sceller (profil oméga 55 × 55)'], ['sem', 'Sans guide au sol']], req: !!m.rail });   // 05/11/2026 (Sónia, A45): também sem guia no chão
   if (m.kind === 'cloture') {
     if (m.gamme === 'st') {
-      add({ k: 'potType', sec: 'Poteaux', label: 'Poteaux', type: 'radio', opts: m.potCl.map(p => [p.id, p.label, p.id === 'R3' && Number(v.H) > 0 && Number(v.H) < 1750]), req: false, hint: Number(v.H) < 1750 && Number(v.H) > 0 ? t('Poteau rond Ø60 x 3 mm : à partir de 1 750 mm de hauteur.') : '' });
+      add({ k: 'potType', sec: 'Poteaux', label: 'Poteaux', type: 'radio', opts: m.potCl.map(p => [p.id, p.label, p.id === 'R3' && Number(v.H) > 0 && Number(v.H) < 1750]), req: false, hint: Number(v.H) < 1750 && Number(v.H) > 0 ? t('Poteau rond Ø60 x 3 mm : à partir de 1750 mm de hauteur.') : '' });
       const pt = m.potCl.find(p => p.id === v.potType);
       if (pt && pt.trous) add({ k: 'potTrous', sec: 'Poteaux', label: 'Perçage', type: 'radio', opts: pt.trous, req: true });
     } else {
@@ -3437,8 +3456,8 @@ function fieldsForAll(m, v) {
     add({ k: 'premPalpeur', sec: 'Motorisation', label: 'Prémontage du palpeur embarqué', type: 'check' });
   }
   if (portail && ouv === 'motorise' && m.arbre) {
-    const coL = /^CO/.test(m.arbre) && Number(v.L) > 8000;   // Collectif: kit moteur Ferplay só até 8 000 mm
-    add({ k: 'm_src', sec: 'Motorisation', label: 'Le moteur est', type: 'radio', opts: [['client', 'Fourni par le client'], ['ferplay', 'Fourni par Ferplay', coL]], req: true, hint: /^CO/.test(m.arbre) ? t('Moteur Ferplay : jusqu’à 8 000 mm de largeur.') : '' });
+    const coL = /^CO/.test(m.arbre) && Number(v.L) > 8000;   // Collectif: kit moteur Ferplay só até 8000 mm
+    add({ k: 'm_src', sec: 'Motorisation', label: 'Le moteur est', type: 'radio', opts: [['client', 'Fourni par le client'], ['ferplay', 'Fourni par Ferplay', coL]], req: true, hint: /^CO/.test(m.arbre) ? t('Moteur Ferplay : jusqu’à 8000 mm de largeur.') : '' });
     if (v.m_src) {
       // 03/11/2026 (testes internos): marca e modelo do motor: obrigatórios se fornecido pelo cliente, opcionais se pela Ferplay (e sempre opcionais na versão interna)
       add({ k: 'm_marque', sec: 'Motorisation', label: 'Marque du moteur', type: 'text', req: v.m_src === 'client' });
@@ -3473,7 +3492,7 @@ function fieldsForAll(m, v) {
   if (v.trait !== 'GALVA' || v.galvaLaq === 'avec') {
     add({ k: 'coul', sec: 'Finition', label: 'Couleur', type: 'select', opts: [...m.couleurs.map(c => [c, `${c} – ${t(COLORS[c] || '')}`]), ['__autre', 'Autre RAL (saisie manuelle)']], req: true });
     if (v.coul === '__autre') add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
-    if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: true });   // 05/11/2026 (feedback interno): finição da cor (texturado / mat), facultativa e desmarcável
+    if (v.coul && chapaInd(m, v)) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: false });   // 17/11/2026: só com chapa e facultativo   // 05/11/2026 (feedback interno): finição da cor (texturado / mat), facultativa e desmarcável
   }
   // --- opções
   // 05/11/2026 (feedback interno): as opções vêm agrupadas por tipo, como no ARC (remplissage e tôles / serrures e fermetures / acessórios e equipamentos)
@@ -3497,7 +3516,6 @@ function fieldsForAll(m, v) {
   const pivStd = /^(INSMVAAC|COVAAC|COPOA4)$/.test(m.code);
   if (pivStd || (m.options || []).some(o => /pivot roulement/i.test(o.label) && v['o' + o.id])) add({ k: 'pivFix', sec: 'Options – accessoires et équipements', label: 'Pivots à roulement à billes : fixation', type: 'radio', opts: ['À visser', 'À sceller'], req: !pivStd });   // 03/11/2026 (testes internos)   // 03/11/2026 (testes internos)
   // 05/11/2026 (feedback interno): portões com chapa (tôle): finição facultativa texturado / mat (vai para as Observations)
-  if ((m.options || []).some(o => /t[ôo]l/i.test(o.label) && !/prot/i.test(o.label) && v['o' + o.id])) add({ k: 'finTole', sec: 'Finitions', label: 'Finition de la tôle', type: 'radio', opts: ['Texturé', 'Mat'], req: true });
   add({ k: 'obs', sec: 'Observations', label: 'Observations pour ce produit (demandes particulières, modifications…)', type: 'textarea' });
   return F;
 }
@@ -3668,9 +3686,9 @@ const HFH_OPTS = [
       ['g1', 'Maille 200x50 avec pli, sans barreaux', ['^200X50 AVEC PLI$', '^SANS BARREAUX$']], ['g2', 'Maille 200x50 avec pli, avec barreaux', ['^200X50 AVEC PLI$', '^AVEC BARREAUX$']],
       ['g3', 'Maille 200x50 sans pli', ['^200X50 SANS PLI$']], ['g4', 'Maille 50x50', ['^50X50$']], ['g5', 'Maille 20x20', ['^20X20$']]] },
     { k: 'tt', lab: 'Tout tôlé', kinds: 'bcp', res: ['^TOUT TOLE$'] },
-    { k: 'sb', lab: 'Soubassement tôlé (hauteur)', kinds: 'bcp', type: 'select', res: ['^SOUBASSEMENT TOLE$'], opts: [['s1', 'Soubassement tôlé > 500 mm et ≤ 600 mm (passage jusqu’à 5 m)'], ['s2', 'Soubassement tôlé > 600 mm et ≤ 1 250 mm (passage jusqu’à 5 m)']] },
+    { k: 'sb', lab: 'Soubassement tôlé (hauteur)', kinds: 'bcp', type: 'select', res: ['^SOUBASSEMENT TOLE$'], opts: [['s1', 'Soubassement tôlé > 500 mm et ≤ 600 mm (passage jusqu’à 5 m)'], ['s2', 'Soubassement tôlé > 600 mm et ≤ 1250 mm (passage jusqu’à 5 m)']] },
     { k: 'ta', lab: 'Tôle en applique sur barreaux', kinds: 'bcp', res: ['^TOLE EN APPLIQUE SUR BARREAUX$'] },
-    { k: 'mp', lab: 'Tôle microperforée R8 T12 (hauteur maxi 2 000 / 2 500)', kinds: 'bcp', res: ['^MICRO-PERFOREE R8T12$'] },
+    { k: 'mp', lab: 'Tôle microperforée R8 T12 (hauteur maxi 2000 / 2500)', kinds: 'bcp', res: ['^MICRO-PERFOREE R8T12$'] },
     { k: 'oss', lab: 'Ossature renforcée', kinds: 'bcp', type: 'select', opts: [['Ossature 50x50', 'Ossature renforcée 50x50'], ['Ossature 60x60', 'Ossature renforcée 60x60']] },
     { k: 'gp', lab: 'Grille en pente', kinds: 'bcp' }, { k: 'ga', lab: 'Grille en arrondie (cintrée)', kinds: 'bcp' }, { k: 'tc', lab: 'Traverse haute en chapeau de gendarme', kinds: 'bcp' }]],
   ['Accessoires et serrurerie', [
@@ -3728,11 +3746,10 @@ function habPdfFerHab(m, v, P) {
     for (const [, items] of habFhOptsOf(m)) for (const it of items) {
       const val = v['fo_' + it.k]; if (!val) continue;
       if (it.type === 'select') { const o = it.opts.find(x => x[0] === val); if (o) P.fhOpts.push({ k: it.k, lab: it.lab, val: o[1], res: o[2] || it.res || [], noObsIfBox: it.k === 'grill' || !!o[2] }); }   // 07/11/2026 (Gonçalo): se o valor já está marcado numa caixa do ARC não se repete nas Observations
-      else P.fhOpts.push({ k: it.k, lab: it.lab, val: '', res: it.res || [] });
+      else P.fhOpts.push({ k: it.k, lab: it.lab, val: it.k === 'bd' ? String(v.fo_bdTxt || '').trim() : '', res: it.res || [] });   // 17/11/2026: «Barreaudage différent : <tipo>» nas Observations
     }
     if (v.fo_dom) P.fhDom = v.fo_dom;
-    if (v.finTole) P.horsArc.push(t('Finition de la tôle') + ' : ' + t(v.finTole));
-    if (v.finRal) P.horsArc.push(t('Finition de la couleur') + ' : ' + t(v.finRal));
+    if ((v.finRal === 'Texturé' || v.finRal === 'Mat') && habChapa(m, v)) P.horsArc.push(t('Finition de la couleur') + ' : ' + t(v.finRal));   // 17/11/2026: só com chapa (e nunca o RAL escrito do thermolaquage)
     if (v.fo_autre) P.fhAutre = v.fo_autre;
   }
 }
@@ -3770,6 +3787,8 @@ function habOptionList(m, v) {
   // vmax (Régionale sur mesure, vantaux tiercés): o maior vantail (2/3 de L) não pode passar de vmax
   return all.filter(o => ids.includes(String(o.id)) && o.typeopt !== 25 && !(o.vmax && Number(v.L) && Number(v.L) * 2 / 3 > o.vmax));
 }
+// 17/11/2026 (feedback interno, Ferro Habitat): «Finition de la couleur» (Texturé / Mat) só com chapa: opções do tarif de chapa, «Cache vue», «Tôles» ou «Tôles basses»
+const habChapa = (m, v) => ['fo_tt', 'fo_sb', 'fo_ta', 'fo_mp'].some(k => v[k]) || habOptionList(m, v).some(o => v['o' + o.id] && /cache vue|^t[ôo]les?( basses)?$/i.test(String(o.titre || o.nom || '').trim()));
 const habTabItems = o => (o.tableau || []).flatMap(e => e.L && e.L.length && e.L[0] !== 'Nb' && e.T !== 'Chiffre' ? e.L.map(s => `${e.T} ${s}`) : (e.S ? e.S.map(s => `${e.T} ${s}`) : (e.T === 'Chiffre' ? [] : [e.T])));
 
 // 27/10/2026 (decisões 31, 42 e 43): avisos laranja «à étudier par Ferplay» (nunca erros) do Alumínio Habitat — combinações L × H que a grelha
@@ -3797,7 +3816,7 @@ function habAluWarn(m, v) {
   // Andalousite (battant): flèche máx. 2 000 mm
   if (g === 'Andalousite' && m.kind === 'battant') {
     const rule = habHRule(m), ah = rule && habAluH(m, v, rule), h3 = ah && !ah.pendente ? ah.H3 : (v.hRef === 'H3' ? Number(v.Hin3) : null);
-    if (h3 > 2000) w('H', 'Andalousite : hauteur maximum à la flèche 2 000 mm (H3 = {h3} mm) : à étudier par Ferplay', { h3: fmt(h3) });
+    if (h3 > 2000) w('H', 'Andalousite : hauteur maximum à la flèche 2000 mm (H3 = {h3} mm) : à étudier par Ferplay', { h3: fmt(h3) });
   }
   // tiercé: o maior vantail (2/3 de L) até 2,5 m (2,25 m no Village)
   const tier = !!v.o113 && m.kind === 'battant';
@@ -3835,7 +3854,7 @@ function fieldsHab(m, v) {
   if (v.coul === '__autre' && v.trait !== 'BRUT' && !(v.trait && cpt[v.trait])) add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
   const fins = v.coul && v.coul !== '__autre' ? habFinitions(m, v.coul) : habFinitions(m, '');
   if (fins.length) add({ k: 'fin', sec: 'Finition', label: 'Finition', type: 'radio', opts: fins, req: true, deselect: true });   // 12/11/2026: obrigatória a escolha entre Texturée e Mat (as outras, só uma possível, facultativas)
-  else if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: true });   // 05/11/2026
+  else if (v.coul && (m.famille !== 'fer-habitat' || habChapa(m, v))) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: m.famille !== 'fer-habitat' });   // 05/11/2026; 17/11/2026: no Ferro só com chapa e facultativo
   habFinExtra(m, v, add);
   };
   if (trs.length) corBlock();   // com Traitement (Ferro): a Couleur vem logo a seguir; sem Traitement (Alu) fica onde estava
@@ -3889,7 +3908,7 @@ function fieldsHab(m, v) {
     add({ k: 'Hp', sec: 'Dimensions', label: 'Hauteur au point le plus haut (2e hauteur de l’ARC)', type: 'number', unit: 'mm', req: false, min: 0, max: 5000, hard: true,
       hint: dl ? tf('Suggestion automatique : hauteur + {d} mm ; vous pouvez la modifier.', { d: dl }) : t('Facultatif : hauteur au point le plus haut.') });
   }
-  if (r.surMesure && /^HAALCORS(NO|PY)$/.test(m.rcode) && m.kind !== 'portillon' && Number(v.L) > 3000) add({ k: 'meneauxInfo', sec: 'Dimensions', type: 'info', text: tf('Largeur de passage {l} mm : {n} meneau(x) obligatoire(s) (lames de 1 500 mm maximum).', { l: fmt(v.L), n: Number(v.L) >= 3500 ? 2 : 1 }) });
+  if (r.surMesure && /^HAALCORS(NO|PY)$/.test(m.rcode) && m.kind !== 'portillon' && Number(v.L) > 3000) add({ k: 'meneauxInfo', sec: 'Dimensions', type: 'info', text: tf('Largeur de passage {l} mm : {n} meneau(x) obligatoire(s) (lames de 1500 mm maximum).', { l: fmt(v.L), n: Number(v.L) >= 3500 ? 2 : 1 }) });
   // forma
   // City: nem os battants nem os portillons têm as formas B e C (Gonçalo, 22/10/2026)
   const formesOk = (r.formes || []).filter(f => !(/^HAALTRTC/.test(m.rcode) && ['battant', 'portillon'].includes(m.kind) && /^[BC]$/.test(f.code)) && !(m.famille === 'alu-habitat' && m.kind === 'coulissant' && /^[BC]$/.test(f.code)));
@@ -3908,6 +3927,9 @@ function fieldsHab(m, v) {
       if (fS && fC && (String(v.fix) === '1' || String(v.fix) === '15')) add({ k: 'fix2', sec: 'Pose', type: 'check', label: String(v.fix) === '1' ? 'Ajouter aussi : Gond avec cache (Standard + gond avec cache)' : 'Ajouter aussi : Standard, gonds multiréglage à visser haut et bas (Standard + gond avec cache)' });
       else delete v.fix2;
       const fx = habFix(m, v);
+      // 17/11/2026 (Gonçalo): a crapaudine pode acompanhar pivot, multiréglage ou 3 pontos (opção extra; a marcação vai para o ARC além da fixação)
+      if (m.famille === 'alu-habitat' && fx && String(fx.id) !== '4' && /pivot|multir.glage|3 points/i.test(fx.titre || '')) add({ k: 'crap', sec: 'Pose', type: 'check', label: 'Ajouter aussi : Crapaudine à visser au sol réglable' });
+      else delete v.crap;
       // 07/11/2026 (Gonçalo): com um pivot escolhido na fixação (pivot standard acier, renforcé, roulement à billes) pergunta-se se é à visser ou à sceller: a cruz vai para a caixa PIVOTS do ARC (e não para os GONDS)
       if (fx && /pivot/i.test(fx.titre || '')) add({ k: 'pivFixPose', sec: 'Pose', label: 'Pivots : fixation', type: 'radio', opts: [['visser', 'À visser'], ['sceller', 'À sceller']], req: false });
       else delete v.pivFixPose;
@@ -4066,8 +4088,8 @@ function fieldsHab(m, v) {
       const k = 'fo_' + it.k;
       if (it.type === 'select') add({ k, sec: 'Options du tarif – ' + g, label: it.lab, type: 'select', opts: [['', 'Aucun'], ...it.opts.map(o => [o[0], o[1]])], req: false, wide: true });
       else add({ k, sec: 'Options du tarif – ' + g, label: it.lab, type: 'check' });
+      if (it.k === 'bd' && v[k]) add({ k: 'fo_bdTxt', sec: 'Options du tarif – ' + g, label: 'Type de barreaudage', type: 'text', req: true, wide: true });   // 17/11/2026 (feedback interno): «Barreaudage différent» pede o tipo
     }
-    if (['fo_tt', 'fo_sb', 'fo_ta', 'fo_mp'].some(k => v[k]) || v.o74) add({ k: 'finTole', sec: 'Finitions', label: 'Finition de la tôle', type: 'radio', opts: ['Texturé', 'Mat'], req: true });   // 05/11/2026
     add({ k: 'fo_dom', sec: 'Options du tarif – Totem et boîte aux lettres', label: 'Numéro de domicile ou lettres (chiffres 0–9, lettres A B C TER BIS)', type: 'text', req: false });
     add({ k: 'fo_autre', sec: 'Options du tarif – Totem et boîte aux lettres', label: 'Autre option du tarif / à préciser', type: 'text', req: false, wide: true });
   }
@@ -4104,6 +4126,7 @@ function habPdfValues(m, v) {
   if (m.famille === 'alu-habitat' && v.o142 && v.totH) P.horsArc.push(t('Totem') + ' : ' + [fmt(v.totH) + ' mm', v.totOr || v.totLw ? t('lames') + ' ' + [v.totOr === 'V' ? t('verticales') : (v.totOr === 'H' ? t('horizontales') : ''), v.totLw ? v.totLw + 'x20' : ''].filter(Boolean).join(' ') : '', v.totFix ? t(v.totFix === 'sceller' ? 'à sceller' : 'entre poteaux') : '', v.totBal ? (v.totBal === '305' ? t('Réservation boîte aux lettres 305x305') : t('BAL') + ' ' + t('Ferplay') + ' 290x290') : ''].filter(Boolean).join(' · '));
   P.potMode = v.potMode; P.potSec = v.potSec;
   { const pp = habPose(m, v); const fS = pp && pp.fixations.find(f => String(f.id) === '1'), fC = pp && pp.fixations.find(f => String(f.id) === '15'); P.fixTitre2 = v.fix2 && fS && fC ? (String(v.fix) === '1' ? fC.titre : fS.titre) : ''; }
+  P.crap = !!v.crap;   // 17/11/2026
   P.potRecOn = !!v.potRecOn; P.potRecQt = Number(v.potRecQt) || 1; P.potRec = v.potRecOn ? v.potRec : '';
   P.potGuiOn = !!v.potGuiOn; P.potGuiQt = Number(v.potGuiQt) || 1; P.potGui = v.potGuiOn ? v.potGui : '';
   P.gache = v.gache ? v.gacheT : undefined;
@@ -4220,7 +4243,7 @@ function fieldsHabCloture(m, v) {
     const lisse = ['1', '2', '3'].includes(String(v.forme));
     add({ k: 'etr', sec: ps, label: lisse ? 'Extrémités contre le mur sans poteau : étrier à visser (lisses)' : 'Extrémités contre le mur sans poteau : embase à visser (traverses)', type: 'check' });
   }
-  if (kind === 'kl') add({ k: 'potKl75', sec: ps, type: 'info', text: t('Poteau de 2 100 mm : Eco 75x75.') });
+  if (kind === 'kl') add({ k: 'potKl75', sec: ps, type: 'info', text: t('Poteau de 2100 mm : Eco 75x75.') });
   // tratamento (Acier) e cor (Klolame: só RAL 7016 + outro RAL; Acier: conforme o tratamento)
   const trr = HABR(r.traitements), cpt = (trr && trr.couleursParTraitement) || {};
   if (trr && trr.liste) add({ k: 'trait', sec: 'Traitement', label: 'Traitement', type: 'radio', opts: trr.liste.map(x => [x.code, `${x.titre} – ${x.desc}`]), req: true });
@@ -4229,7 +4252,7 @@ function fieldsHabCloture(m, v) {
   if (v.coul === '__autre') add({ k: 'ralAutre', sec: 'Finition', label: 'Référence RAL', type: 'text', req: true, hint: t('Attention, voir la disponibilité du RAL hors standard avec l’usine.'), hintRed: true });
   const fins = habFinitions(m, v.coul && v.coul !== '__autre' ? v.coul : '');
   if (fins.length) add({ k: 'fin', sec: 'Finition', label: 'Finition', type: 'radio', opts: fins, req: true, deselect: true });   // 12/11/2026: obrigatória a escolha entre Texturée e Mat (as outras, só uma possível, facultativas)
-  else if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: true });   // 05/11/2026
+  else if (v.coul && (m.famille !== 'fer-habitat' || habChapa(m, v))) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: m.famille !== 'fer-habitat' });   // 05/11/2026; 17/11/2026: no Ferro só com chapa e facultativo
   habFinExtra(m, v, add);
   // opções (por tipo de clôture)
   for (const o of habOptionList(m, v)) {
@@ -4274,7 +4297,7 @@ const LDG_MODELS = {
   cal: [['1246D', '1246D – Pose sur dalle (Crystal View)', 'CALIPSOS', '120', true], ['1246A', '1246A – Pose à l’anglaise (Crystal View Plus)', 'CALIPSOS', '120', true]],
   ramp: [['MC 6025 RL', 'MC 6025 RL – main courante rectangulaire 60x25 laquée', 'AMBRE', 'Rampe et main courante'], ['MC 50 DL', 'MC 50 DL – main courante ronde Ø50 laquée', 'AMBRE', 'Rampe et main courante']],
   pgc: [['Portillon barreaudé', 'Portillon barreaudé (barreaux 20x20)', 'AMBRE', 'Portillon', true], ['Portillon vitré', 'Portillon vitré (stadip 4.4/2)', 'AMBRE', 'Portillon', true], ['Portillon tôlé', 'Portillon tôlé (tôle 3 mm)', 'AMBRE', 'Portillon', true]],
-  sep: [['Séparateur de balcons', 'Séparateur de balcons (H 600 à 2 000)', 'AMBRE', 'Séparateur'], ['Pare-vent et séparateur de terrasse', 'Pare-vent et séparateur de terrasse (H 900 à 2 000)', 'AMBRE', 'Pare-vent'], ['Brise-vue et pare-vent de terrasse', 'Brise-vue et pare-vent de terrasse (H maxi 1 500)', 'AMBRE', 'Brise-vue']],
+  sep: [['Séparateur de balcons', 'Séparateur de balcons (H 600 à 2000)', 'AMBRE', 'Séparateur'], ['Pare-vent et séparateur de terrasse', 'Pare-vent et séparateur de terrasse (H 900 à 2000)', 'AMBRE', 'Pare-vent'], ['Brise-vue et pare-vent de terrasse', 'Brise-vue et pare-vent de terrasse (H maxi 1500)', 'AMBRE', 'Brise-vue']],
 };
 // 27/10/2026 (decisão 5): poses específicas e adaptações técnicas do tarif (p.176–178, 193, 207): lista de escolha que vai para as Observations
 // (+ campo de texto livre «Autre / préciser»)
@@ -4332,7 +4355,7 @@ function fieldsLdg(m, v) {
   // 27/10/2026 (decisão 2): detalhes dos produtos sem ARC próprio (CALIPSOS, rampe, portillon de garde-corps, séparateurs…): tudo para as Observations
   if (d.extra === 'cal') {
     add({ k: 'x_prof', sec: 'Modèle', label: 'Finition du profil', type: 'radio', opts: ['Anodisé naturel', 'Thermolaqué'], req: true });
-    add({ k: 'x_h', sec: 'Modèle', label: 'Hauteur (mm, maximum 1 100)', type: 'number', unit: 'mm', req: false, min: 0, max: 1100, soft: true });
+    add({ k: 'x_h', sec: 'Modèle', label: 'Hauteur (mm, maximum 1100)', type: 'number', unit: 'mm', req: false, min: 0, max: 1100, soft: true });
     add({ k: 'x_vit', sec: 'Modèle', label: 'Vitrage feuilleté (épaisseurs verre – PVB – verre)', type: 'select', opts: [['', 'Sans vitrage (commande sans vitrage)'], ...LDG_CAL_VITRAGES.map(x => [x, x])], req: false });
     add({ k: 'x_evac', sec: 'Modèle', label: 'Profil d’évacuation d’eau (sous le rail)', type: 'check' });
     add({ k: 'x_capot', sec: 'Modèle', label: 'Capot de finition (COR-8551)', type: 'check' });
@@ -4340,10 +4363,10 @@ function fieldsLdg(m, v) {
     add({ k: 'x_ml', sec: 'Modèle', label: 'Longueur totale (ML)', type: 'number', unit: 'ml', req: false, min: 0, max: 99999, hard: true, dec: true });
   }
   if (d.extra === 'ramp') {
-    add({ k: 'x_len', sec: 'Modèle', label: 'Longueur de la main courante (livrée en sur-longueur)', type: 'radio', opts: ['≤ 2 900 mm', '> 2 900 mm'], req: false });
+    add({ k: 'x_len', sec: 'Modèle', label: 'Longueur de la main courante (livrée en sur-longueur)', type: 'radio', opts: ['≤ 2900 mm', '> 2900 mm'], req: false });
     add({ k: 'x_fix', sec: 'Modèle', label: 'Fixation de la rampe', type: 'radio', opts: ['Étriers muraux', 'Poteaux GP 423 (support de main courante amovible)'], req: false });
     if (v.x_fix === 'Étriers muraux') {
-      add({ k: 'x_etr', sec: 'Modèle', label: 'Étriers (entre fixations 1 400 mm maximum)', type: 'radio', opts: ['Étrier standard', 'Étrier rallongé (70 mm maximum, à recouper)'], req: false });
+      add({ k: 'x_etr', sec: 'Modèle', label: 'Étriers (entre fixations 1400 mm maximum)', type: 'radio', opts: ['Étrier standard', 'Étrier rallongé (70 mm maximum, à recouper)'], req: false });
       add({ k: 'x_etrq', sec: 'Modèle', label: 'Étriers – quantité', type: 'number', req: false, min: 0, max: 999, hard: true });
     }
     if (v.x_fix && /GP 423/.test(v.x_fix)) {
@@ -4352,7 +4375,7 @@ function fieldsLdg(m, v) {
     }
   }
   if (d.extra === 'pgc') {
-    add({ k: 'x_lg', sec: 'Modèle', label: 'Largeur du portillon (mm ; tarifée 800 ou 1 200)', type: 'number', unit: 'mm', req: false, min: 0, max: 99999, hard: true, hint: t('Passage libre de 900 mm minimum (ERP).') });
+    add({ k: 'x_lg', sec: 'Modèle', label: 'Largeur du portillon (mm ; tarifée 800 ou 1200)', type: 'number', unit: 'mm', req: false, min: 0, max: 99999, hard: true, hint: t('Passage libre de 900 mm minimum (ERP).') });
     add({ k: 'x_h', sec: 'Modèle', label: 'Hauteur (mm)', type: 'number', unit: 'mm', req: false, min: 0, max: 99999, hard: true });
     add({ k: 'x_sens', sec: 'Modèle', label: 'Sens d’ouverture (vue extérieure)', type: 'radio', opts: ['À gauche', 'À droite'], req: false });
     add({ k: 'x_pot2', sec: 'Modèle', label: '2 poteaux sur platine', type: 'check' });
@@ -4364,7 +4387,7 @@ function fieldsLdg(m, v) {
     const mo = v.modele, hs = mo === 'Séparateur de balcons' ? [600, 900, 1200, 1500, 1800, 2000] : (mo === 'Pare-vent et séparateur de terrasse' ? [900, 1200, 1500, 1800, 2000] : []);
     add({ k: 'x_nc', sec: 'Modèle', type: 'info', text: t('Produit non conforme aux normes garde-corps : il ne peut pas remplacer un garde-corps.') });
     if (hs.length) add({ k: 'x_h', sec: 'Modèle', label: 'Hauteur (mm)', type: 'select', opts: hs.map(h => [String(h), fmt(h) + ' mm']), req: false });
-    else if (mo) add({ k: 'x_h', sec: 'Modèle', label: 'Hauteur (mm, maximum 1 500)', type: 'number', unit: 'mm', req: false, min: 0, max: 1500, soft: true });
+    else if (mo) add({ k: 'x_h', sec: 'Modèle', label: 'Hauteur (mm, maximum 1500)', type: 'number', unit: 'mm', req: false, min: 0, max: 1500, soft: true });
     add({ k: 'x_ml', sec: 'Modèle', label: 'Longueur totale (ML)', type: 'number', unit: 'ml', req: false, min: 0, max: 99999, hard: true, dec: true });
     add({ k: 'x_vitt', sec: 'Modèle', label: 'Teinte du vitrage (verre feuilleté 4.4/2)', type: 'radio', opts: LDG_VITRAGE_TEINTES, req: false });
     if (mo && mo !== 'Séparateur de balcons') add({ k: 'x_bas', sec: 'Modèle', label: 'Partie basse', type: 'radio', opts: mo === 'Brise-vue et pare-vent de terrasse' ? ['Lames 100x20', 'Lames 150x20', 'Lames 200x20', 'Lames 300x20', 'Tôle plane 30/10'] : ['Tôle 30/10', 'Lames horizontales 200x20', 'Autre (à préciser dans les observations)'], req: false });
@@ -4411,8 +4434,8 @@ function ldgPdfValues(m, v) {
   const qty = o => Object.entries(o || {}).filter(([, q]) => Number(q) > 0).map(([n, q]) => `${t(n)} × ${q}`).join(', ');
   if (d.extra) P.horsArc.push(t(d.label) + ' (' + (d.arc === 'LDG-RAMPANT' ? t('ARC rampant') : t('ARC terrasse')) + ')');
   if (m.rcode === 'LDG-CALIPSOS' || m.rcode === 'LDG-SEPARATEUR' || m.rcode === 'LDG-PORTILLON-GC' || m.rcode === 'LDG-RAMPE') P.horsArc.push(t('Modèle') + ' : ' + (mod[1] ? t(mod[1]) : (v.modele || '')));
-  for (const [k, lab] of [['x_prof', 'Finition du profil'], ['x_h', 'Hauteur'], ['x_vit', 'Vitrage feuilleté (épaisseurs verre – PVB – verre)'], ['x_ml', 'Longueur totale (ML)'], ['x_len', 'Longueur de la main courante (livrée en sur-longueur)'], ['x_fix', 'Fixation de la rampe'], ['x_etr', 'Étriers (entre fixations 1 400 mm maximum)'], ['x_etrq', 'Étriers – quantité'],
-    ['x_lg', 'Largeur du portillon (mm ; tarifée 800 ou 1 200)'], ['x_sens', 'Sens d’ouverture (vue extérieure)'], ['x_bar', 'Barreaux'], ['x_vitt', 'Teinte du vitrage (verre feuilleté 4.4/2)'], ['x_tole', 'Tôle'], ['x_dec', 'Décor de la tôle'], ['x_bas', 'Partie basse']])
+  for (const [k, lab] of [['x_prof', 'Finition du profil'], ['x_h', 'Hauteur'], ['x_vit', 'Vitrage feuilleté (épaisseurs verre – PVB – verre)'], ['x_ml', 'Longueur totale (ML)'], ['x_len', 'Longueur de la main courante (livrée en sur-longueur)'], ['x_fix', 'Fixation de la rampe'], ['x_etr', 'Étriers (entre fixations 1400 mm maximum)'], ['x_etrq', 'Étriers – quantité'],
+    ['x_lg', 'Largeur du portillon (mm ; tarifée 800 ou 1200)'], ['x_sens', 'Sens d’ouverture (vue extérieure)'], ['x_bar', 'Barreaux'], ['x_vitt', 'Teinte du vitrage (verre feuilleté 4.4/2)'], ['x_tole', 'Tôle'], ['x_dec', 'Décor de la tôle'], ['x_bas', 'Partie basse']])
     if (v[k] != null && v[k] !== '') P.horsArc.push(t(lab) + ' : ' + t(String(v[k])) + (k === 'x_h' || k === 'x_lg' ? ' mm' : (k === 'x_ml' ? ' ml' : '')));
   for (const [k, lab] of [['x_evac', 'Profil d’évacuation d’eau (sous le rail)'], ['x_capot', 'Capot de finition (COR-8551)'], ['x_pu200', 'Profil de recouvrement type main courante (PU 200)'], ['x_pot2', '2 poteaux sur platine'], ['x_pang', 'Poteau d’angle variable (ou angle ajustable)'], ['x_pfin', 'Poteau de fin']]) if (v[k]) P.horsArc.push(t(lab));
   if (v.x_pot && qty(v.x_pot)) P.horsArc.push(t('Poteaux de rampe 40x40 (H 980 mm, en kit)') + ' : ' + qty(v.x_pot));
@@ -4498,7 +4521,7 @@ const ALUI_OPTS = [
   ['baton', 'Bâton de maréchal LOCINOX (BAR-I, H 400 mm)', 'BP', 'baton'],
   ['renfort', 'Renfort moteur enterré ALU49 (par portail)', 'B', null],
   ['laser', 'Découpe laser sur une tôle (8 motifs Ferplay)', 'BPCA', null, 'r'],
-  ['laserx', 'Découpe laser : croix de Saint André (500 mm de haut x 1 500 à 2 000 mm de long maxi)', 'BPCA', null, 'r'],
+  ['laserx', 'Découpe laser : croix de Saint André (500 mm de haut x 1500 à 2000 mm de long maxi)', 'BPCA', null, 'r'],
   ['coffreM', 'Coffret métallique pour moteur au sol (800 x 450 x 300 mm)', 'CA', 'coffreM'],
   ['chaise', 'Chaise moteur (rehausse la motorisation pour l’autoporté)', 'A', 'chaise'],
 ];
@@ -4574,7 +4597,7 @@ function aluGuidRule(m, v) {
 }
 function fieldsAluCl(m, v) {
   const F = [], add = f => F.push(f);
-  add({ k: 'qt', sec: 'Dimensions', label: 'Nombre de panneaux', type: 'number', req: true, min: 1, max: 9999, hard: true, hint: t('À partir de 10 panneaux ; en dessous : plus-value de 10 %.') + ' ' + t('Panneau de 2 000 mm de large (entraxe des poteaux 2,08 m).') });
+  add({ k: 'qt', sec: 'Dimensions', label: 'Nombre de panneaux', type: 'number', req: true, min: 1, max: 9999, hard: true, hint: t('À partir de 10 panneaux ; en dessous : plus-value de 10 %.') + ' ' + t('Panneau de 2000 mm de large (entraxe des poteaux 2,08 m).') });
   add({ k: 'H', sec: 'Dimensions', label: 'Hauteur', type: 'select', opts: ALUI_CLH.map(h => [h, fmt(h) + ' mm']), req: true });
   if (m.code === 'ALUI:ULIS') add({ k: 'barType', sec: 'Remplissage', label: 'Barreaux', type: 'radio', opts: [['ronds', 'Tubes ronds Ø25'], ['carres', 'Tubes carrés 25x25']], req: true });
   add({ k: 'potType', sec: 'Poteaux', label: 'Poteaux', type: 'radio', opts: [['C80', 'Poteaux carrés 80x80 (aluminium)'], ['R60', 'Poteaux ronds Ø60 x 3 (aluminium)']], req: true });
@@ -4612,7 +4635,7 @@ function fieldsAluInd(m, v) {
   add({ k: 'sens', sec: 'Ouverture', label: "Sens d'ouverture (vue extérieure)", type: 'radio', opts: m.sens, req: true });
   if (kind === 'battant') {
     const lim4 = m.fam === '49c';   // ALU49c: monovantail 4 m maxi e vantail maior ≤ 4 m (tarif p.215); no ALU49 livre
-    add({ k: 'vantaux', sec: 'Ouverture', label: 'Type de portail', type: 'radio', opts: [['2v', '2 vantaux'], ['tierce', 'Vantaux inégaux (tiercé)', lim4 && L > 6000], ['mono', 'Monovantail', lim4 && L > 4000]], req: true, hint: lim4 ? t('Monovantail : 4 000 mm maximum. Vantaux inégaux : le grand vantail (2/3 de la largeur) ne dépasse pas 4 000 mm.') : '' });
+    add({ k: 'vantaux', sec: 'Ouverture', label: 'Type de portail', type: 'radio', opts: [['2v', '2 vantaux'], ['tierce', 'Vantaux inégaux (tiercé)', lim4 && L > 6000], ['mono', 'Monovantail', lim4 && L > 4000]], req: true, hint: lim4 ? t('Monovantail : 4000 mm maximum. Vantaux inégaux : le grand vantail (2/3 de la largeur) ne dépasse pas 4000 mm.') : '' });
   }
   if (m.ouv.length > 1) add({ k: 'ouv', sec: 'Ouverture', label: "Type d'ouverture", type: 'radio', opts: m.ouv.map(o => [o, { manuel: 'Manuelle', motorisable: 'Motorisable (prêt à motoriser, sans serrure)', motorise: 'Motorisée (sans serrure)' }[o]]), req: true });
   if (portail && ouv === 'manuel' && (kind === 'battant')) add({ k: 'serrure', sec: 'Ouverture', label: 'Serrure', type: 'radio', opts: [['oui', 'Oui (serrure Locinox à canon européen)'], ['non', 'Non']], req: true });
@@ -4636,7 +4659,7 @@ function fieldsAluInd(m, v) {
       if (R) add({ k: 'guidInfo', sec: 'Poteaux', type: 'info', text: tf('Selon le tarif : guidage {g}{g2}, réception {r}.', { g: t(R.g === 'Simple' ? 'poteau simple' : 'portique'), g2: R.g2 ? t(' (2 portiques de guidage)') : '', r: t(R.r === 'Simple' ? 'poteau simple' : 'portique') }) });
     }
     if (kind === 'coulissant') add({ k: 'rail', sec: 'Poteaux', label: 'Rail au sol', type: 'radio', opts: [['visser', 'À visser (acier zingué 75 x 3 mm)'], ['sceller', 'À sceller (profil oméga 55 × 55)']], req: true });
-    if (kind === 'autoportant') add({ k: 'queue', sec: 'Poteaux', label: 'Queue', type: 'radio', opts: [['barr', 'Queue barreaudée'], ['pleine', 'Queue pleine']], req: false, hint: t('Rollers à fixer au sol : garantie de 2 ans ou 10 000 cycles (le premier atteint).') });
+    if (kind === 'autoportant') add({ k: 'queue', sec: 'Poteaux', label: 'Queue', type: 'radio', opts: [['barr', 'Queue barreaudée'], ['pleine', 'Queue pleine']], req: false, hint: t('Rollers à fixer au sol : garantie de 2 ans ou 10000 cycles (le premier atteint).') });
   }
   const sec = aluPotSection(m, v), withPot = m.fam === '45' ? v.potindus === 'Avec poteaux' : (m.fam === '49' ? v.potindus === 'Avec poteaux' : !!sec);
   if (withPot) {
@@ -4650,7 +4673,7 @@ function fieldsAluInd(m, v) {
   if (portail && ouv === 'motorise') {
     add({ k: 'm_src', sec: 'Motorisation', label: 'Le moteur est', type: 'radio', opts: [['client', 'Fourni par le client'], ['ferplay', 'Fourni par Ferplay']], req: true });
     if (v.m_src === 'ferplay') {
-      if (kind !== 'battant') add({ k: 'm_pose', sec: 'Motorisation', label: 'Pose du moteur', type: 'radio', opts: ['Moteur posé au sol', 'Coffret technique'], req: true, hint: t('Coffre technique pour collectifs et petits locaux industriels (2 000 ou 2 500 mm de haut maximum).') });
+      if (kind !== 'battant') add({ k: 'm_pose', sec: 'Motorisation', label: 'Pose du moteur', type: 'radio', opts: ['Moteur posé au sol', 'Coffret technique'], req: true, hint: t('Coffre technique pour collectifs et petits locaux industriels (2000 ou 2500 mm de haut maximum).') });
       const ko = aluKitOptions(m, v);
       add({ k: 'm_app', sec: 'Motorisation', label: 'Kit de motorisation', type: 'select', opts: [['', '—'], ...ko.map(k => [k, k])], req: false, hint: ko.length ? '' : t('Aucun kit du tarif pour cette largeur : à étudier par Ferplay.') });
       add({ k: 'm_acc', sec: 'Motorisation', label: 'Accessoires de motorisation (quantités)', type: 'qty', items: ALUI_MOT_ACC });
@@ -4671,7 +4694,7 @@ function fieldsAluInd(m, v) {
   if (v.coul) add({ k: 'finRal', sec: 'Finition', label: 'Finition de la couleur', type: 'radio', opts: ['Texturé', 'Mat'], deselect: true, req: true });   // 05/11/2026
   // --- opções (tarif p.235–237): as que têm caixa no ARC marcam-na, as outras vão para as Observations
   add({ k: 'o_micro', sec: 'Options – remplissage et habillage', label: 'Tôle microperforée (3 mm, Ø5 R5 T8)', type: 'select', opts: [['', 'Aucun'], ['cadre', 'Montée sur cadre (sans le barreaudage)'], ['applique', 'Montée en applique sur barreaudage']], wide: true });
-  add({ k: 'o_soub', sec: 'Options – remplissage et habillage', label: 'Tôle en partie basse (aluminium 30/10, traverse intermédiaire comprise)', type: 'select', opts: [['', 'Aucun'], ['500', 'Soubassement jusqu’à 500 mm de hauteur'], ['600', 'Soubassement de plus de 500 mm jusqu’à 600 mm'], ['1000', 'Soubassement de plus de 600 mm jusqu’à 1 000 mm']], wide: true });
+  add({ k: 'o_soub', sec: 'Options – remplissage et habillage', label: 'Tôle en partie basse (aluminium 30/10, traverse intermédiaire comprise)', type: 'select', opts: [['', 'Aucun'], ['500', 'Soubassement jusqu’à 500 mm de hauteur'], ['600', 'Soubassement de plus de 500 mm jusqu’à 600 mm'], ['1000', 'Soubassement de plus de 600 mm jusqu’à 1000 mm']], wide: true });
   add({ k: 'o_tout', sec: 'Options – remplissage et habillage', label: 'Portail tout tôlé aluminium 20/10', type: 'select', opts: [['', 'Aucun'], ['cadre', 'Tôle montée dans le cadre (sans le barreaudage)'], ['applique', 'Tôle montée en applique sur barreaudage']], wide: true });
   add({ k: 'o_bdiff', sec: 'Options – remplissage et habillage', label: 'Barreaudage différent', type: 'check' });   // 07/11/2026 (Gonçalo): em todos os modelos; sem caixa no ARC → Observations
   add({ k: 'o_bouch', sec: 'Options – remplissage et habillage', label: 'Bouchons noirs PE pour tube Ø25 (kit de 9)', type: 'select', opts: [['', 'Aucun'], ['nm', 'Livrés en sachet (non montés)'], ['m', 'Montés en usine']], wide: true });
@@ -4700,7 +4723,7 @@ function aluIndWarn(m, v) {
   if (aluImpossible(m, v)) w('H', 'Combinaison largeur × hauteur non disponible dans le tarif : à étudier par Ferplay');
   const ouv = m.ouv.length === 1 ? m.ouv[0] : v.ouv, motor = ouv === 'motorisable' || ouv === 'motorise';
   if (m.kind === 'battant' && m.fam === '49c') {
-    if (v.vantaux === 'mono' && L > 3000) w('vantaux', 'Monovantail de plus de 3 000 mm : ossature en tube 100x100, sur consultation : à étudier par Ferplay');
+    if (v.vantaux === 'mono' && L > 3000) w('vantaux', 'Monovantail de plus de 3000 mm : ossature en tube 100x100, sur consultation : à étudier par Ferplay');
     if (v.vantaux === 'mono') w('vantaux', 'Monovantail : plus-value de 15 % (renfort d’ossature et de pivot)');
     if (v.tunnel && v.potCol !== '200') w('potCol', 'Installation en tunnel : poteaux 200x200 et 2 barrages cellules anti-écrasement requis');
   }
@@ -4714,7 +4737,7 @@ function aluIndWarn(m, v) {
   }
   if (motor && v.m_src === 'ferplay' && v.m_app === undefined && !aluKitOptions(m, v).length && L) w('m_app', 'Aucun kit du tarif pour cette largeur : à étudier par Ferplay');
   if ((v.o_lion || v.o_verti || v.o_mamouth) && ((m.fam === '49' && v.potindus === 'Sans poteaux') || (m.fam === '49c' && !aluPotSection(m, v)))) w('o_lion', 'Les ferme-portes sont vendus avec poteaux Ferplay : à étudier par Ferplay');
-  if (v.o_micro && H > 2000) w('o_micro', 'Tôle microperforée : hauteur maximum 2 000 mm : à étudier par Ferplay');
+  if (v.o_micro && H > 2000) w('o_micro', 'Tôle microperforée : hauteur maximum 2000 mm : à étudier par Ferplay');
   return W;
 }
 // ficha / PDF (mesmos valores semânticos que o Ferro Industriel, para o arc_pdf.js reutilizar as caixas do ARC)
@@ -4748,7 +4771,7 @@ function aluProductPdf(p, m, v0, F, warnings) {
     if (v.barType) nota('Barreaux', { ronds: 'Tubes ronds Ø25', carres: 'Tubes carrés 25x25' }[v.barType]);
     if (v.bouchons) P.horsArc.push(t({ n14: 'Sachet de 14 bouchons noirs non montés', m14: '14 bouchons montés en usine', n26: 'Sachet de 26 bouchons non montés', m26: '26 bouchons montés en usine' }[v.bouchons]));
     if (v.biseau) P.horsArc.push(t('Coupe biseautée en partie haute'));
-    P.horsArc.push(tf('Longueur totale : {n} mm (panneaux de 2 000 mm)', { n: fmt((Number(v.qt) || 0) * 2000) }));
+    P.horsArc.push(tf('Longueur totale : {n} mm (panneaux de 2000 mm)', { n: fmt((Number(v.qt) || 0) * 2000) }));
     return { title: `${t(KIND_SHORT.cloture)} ${m.label} – ${fmt((Number(v.qt) || 0) * 2000)} × ${fmt(H)}`, status: warnings.length ? 'orange' : 'green', warnings: warnings.map(x => x.ui), v: { kind: 'cloture', qt: v.qt, L: (Number(v.qt) || 0) * 2000, H: v.H, sens: '' }, pdf: P, details, obs: v.obs || '' };
   }
   const ouv = m.ouv.length === 1 ? m.ouv[0] : v.ouv, motor = ouv === 'motorisable' || ouv === 'motorise';
@@ -4796,7 +4819,7 @@ function aluProductPdf(p, m, v0, F, warnings) {
   if (v.tole) P.horsArc.push(t('Tôle') + ' : ' + t({ pleine: 'Tôle pleine 30/10', R5T8: 'Tôle perforée ronde R5 T8 (sans plus-value)', C10U30: 'Tôle perforée carrée C10 U30 (plus-value de 12 %)' }[v.tole]));
   const ob = (k, lab, map) => { if (v[k]) P.horsArc.push(t(lab) + ' : ' + t(map[v[k]])); };
   ob('o_micro', 'Tôle microperforée (3 mm, Ø5 R5 T8)', { cadre: 'Montée sur cadre (sans le barreaudage)', applique: 'Montée en applique sur barreaudage' });
-  ob('o_soub', 'Tôle en partie basse (aluminium 30/10, traverse intermédiaire comprise)', { 500: 'Soubassement jusqu’à 500 mm de hauteur', 600: 'Soubassement de plus de 500 mm jusqu’à 600 mm', 1000: 'Soubassement de plus de 600 mm jusqu’à 1 000 mm' });
+  ob('o_soub', 'Tôle en partie basse (aluminium 30/10, traverse intermédiaire comprise)', { 500: 'Soubassement jusqu’à 500 mm de hauteur', 600: 'Soubassement de plus de 500 mm jusqu’à 600 mm', 1000: 'Soubassement de plus de 600 mm jusqu’à 1000 mm' });
   ob('o_tout', 'Portail tout tôlé aluminium 20/10', { cadre: 'Tôle montée dans le cadre (sans le barreaudage)', applique: 'Tôle montée en applique sur barreaudage' });
   if (v.o_bdiff) P.horsArc.push(t('Barreaudage différent'));
   ob('o_bouch', 'Bouchons noirs PE pour tube Ø25 (kit de 9)', { nm: 'Livrés en sachet (non montés)', m: 'Montés en usine' });
@@ -4843,6 +4866,8 @@ const PIECE_SECTIONS = [['60', '60 x 60'], ['80', '80 x 80'], ['100', '100 x 100
 const PIECE_SEC_SEL = 'Pièces concernées : cochez les équipements';   // «équipements» ativa a grelha de cartões do editor
 const pcSecTxt = (v, p) => v[p + '_sec'] === '__autre' ? String(v[p + '_secx'] || '') : (v[p + '_sec'] ? v[p + '_sec'] + 'x' + v[p + '_sec'] : '');
 
+// 17/11/2026 (Gonçalo): nos portões de 2 battants não há guidage nem réception; o tipo de portail (battants / coulissant) decide os rôles dos poteaux
+const pcGate = v => v.pc_gate || (([v.pot_role, v.pot2_role].some(r => r === 'guidage' || r === 'reception') || v.pc_port) ? 'coulissant' : (((v.pc_pot || v.pc_pot2) && (v.pot_role === 'soutien' || v.pot2_role === 'soutien')) ? 'battant' : ''));
 function fieldsPieces(m, v) {
   const F = [], add = f => F.push(f), defs = PIECE_DEFS[m.mat] || PIECE_DEFS.fer, on = id => !!v['pc_' + id];
   for (const d of defs) add({ k: 'pc_' + d.id, sec: PIECE_SEC_SEL, label: d.lab, type: 'check' });
@@ -4852,12 +4877,16 @@ function fieldsPieces(m, v) {
   const obs = (id, sec) => add({ k: id + '_obs', sec, label: 'Précisions pour cette pièce (perçages, remarque…)', type: 'text', wide: true });
   const sec = (id, o = {}) => { add({ k: id + '_sec', sec: lab(id), label: 'Section', type: 'select', opts: [['', '—'], ...PIECE_SECTIONS], req: o.req !== false }); if (v[id + '_sec'] === '__autre') add({ k: id + '_secx', sec: lab(id), label: 'Section (ex. 100x60)', type: 'text', req: true }); };
   const fix = (id, opts, req) => add({ k: id + '_fix', sec: lab(id), label: 'Fixation', type: 'radio', opts, req: !!req });
+  { const gc = ['pot', 'pot2', 'port'].filter(on);
+    if (!gc.length) delete v.pc_gate;
+    else { if (!v.pc_gate && pcGate(v)) v.pc_gate = pcGate(v); add({ k: 'pc_gate', sec: lab(gc[0]), label: 'Type de portail', type: 'radio', opts: [['battant', 'Portail 2 vantaux (battants)'], ['coulissant', 'Portail coulissant / autoportant']], req: true }); } }
   // 12/11/2026 (Gonçalo): dois grupos de poteaux (cada um com o seu rôle, secção e fixação): guidage + réception, ou soutien + réception
   for (const pid of ['pot', 'pot2']) if (on(pid)) {
     const s = lab(pid); qt(pid, s);
     // o poteau pode ser de soutien, de guidage ou de réception (guidage / réception → ARC dos coulissants); trappe de visite em todos
     // 12/11/2026 (Gonçalo): o rôle nunca se assume (soutien / guidage / réception): tem de estar escrito no pedido ou escolhe-o a pessoa
-    add({ k: pid + '_role', sec: s, label: 'Rôle du poteau', type: 'radio', opts: [['soutien', 'Poteau de soutien'], ['guidage', 'Poteau de guidage'], ['reception', 'Poteau de réception']], req: true });
+    if (v.pc_gate === 'battant') v[pid + '_role'] = 'soutien';   // 2 battants: só poteaux de soutien (sem guidage nem réception)
+    else if (v.pc_gate === 'coulissant') { if (v[pid + '_role'] === 'soutien') delete v[pid + '_role']; add({ k: pid + '_role', sec: s, label: 'Rôle du poteau', type: 'radio', opts: [['guidage', 'Poteau de guidage'], ['reception', 'Poteau de réception']], req: true }); }
     sec(pid); fix(pid, [['sceller', 'À sceller'], ['visser', 'À visser']], true);
     add({ k: pid + '_trappe', sec: s, label: 'Trappe de visite', type: 'check' });
     // hauteur hors sol → hauteur totale = hors sol + 500 mm de scellement (se à sceller); sugerida e sempre editável (Gonçalo, 05/11/2026)
@@ -4894,6 +4923,8 @@ function piecesErrors(m, v) {
   const defs = PIECE_DEFS[m.mat] || PIECE_DEFS.fer, E = [], mk = (k, s) => E.push({ k, msg: s, ui: t(s), short: t(s) });
   if (m.mat === 'alu' && v.pc_fiche === 'habitat' && !v.pc_gamme) { mk('pc_gamme', 'Choisissez la gamme (Alu Habitat)'); return E; }
   if (!defs.some(d => v['pc_' + d.id])) { mk('pc_' + defs[0].id, 'Choisissez au moins une pièce'); return E; }
+  if ((v.pc_pot || v.pc_pot2 || v.pc_port) && !v.pc_gate) mk('pc_gate', 'Choisissez le type de portail');
+  if (v.pc_port && v.pc_gate === 'battant') mk('pc_gate', 'Les portiques n’existent que sur les portails coulissants');
   const z = o => !Object.values(o || {}).some(q => Number(q) > 0);
   if (v.pc_pot && v.pc_pot2 && (v.pot_role || 'soutien') === (v.pot2_role || 'reception')) mk('pot2_role', 'Poteau 2.º rôle : escolha um rôle diferente do 1.º grupo');
   if (v.pc_trav && z(v.trav_q)) mk('trav_q', 'Traverse : indiquez le type et la quantité');
@@ -4936,7 +4967,7 @@ function piecesProductPdf(p, m, v) {
   // 05/11/2026: a Fiche escolhida decide o ARC — Industriel (Fer battant / Alu ALU-INDUST-BATTANT) ou Habitat (Fer: CONF CDE FER - BATTANT - HABITAT; Alu: BATTANTS da gama escolhida)
   const fam = v.pc_fiche === 'habitat' ? 'habitat' : 'industriel';
   // 07/11/2026 (Gonçalo): poteaux de guidage / réception e portiques → ARC dos portões de correr (coulissant), não o de 2 battants
-  const cou = (!!v.pc_pot && (v.pot_role === 'guidage' || v.pot_role === 'reception')) || (!!v.pc_pot2 && (v.pot2_role === 'guidage' || v.pot2_role === 'reception')) || !!v.pc_port, kindArc = cou ? 'coulissant' : 'battant';
+  const cou = pcGate(v) === 'coulissant' || (!!v.pc_pot && (v.pot_role === 'guidage' || v.pot_role === 'reception')) || (!!v.pc_pot2 && (v.pot2_role === 'guidage' || v.pot2_role === 'reception')) || !!v.pc_port, kindArc = cou ? 'coulissant' : 'battant';
   let tpl = '', gamNom = '';
   if (fam === 'habitat') {
     if (m.mat === 'fer') tpl = cou ? 'CONF CDE FER - COULISSANT - HABITAT' : 'CONF CDE FER - BATTANT - HABITAT';
@@ -4996,15 +5027,15 @@ function validateProduct(m, v) {
     if (m.kind === 'cloture' && m.gamme === 'st' && m.qtymin && Number(v.qt) > 0 && Number(v.qt) < m.qtymin) warn('qt', 'Moins de 10 panneaux : plus-value de 10 %');
     // decisão 6: A45 coulissant > 16 m e autoporté > 12 m: aviso (nunca bloqueia, também em motorizado/motorisable)
     if (/^(INSM|CO)(CO|AU)(A4|C1|C2|H3|HL|K1|K2)$/.test(m.code)) {
-      if (m.kind === 'coulissant' && L > 16000) warn('L', 'A45 coulissant : largeur supérieure à 16 000 mm : à étudier par Ferplay');
-      if (m.kind === 'autoportant' && L > 12000) warn('L', 'A45 autoporté : largeur supérieure à 12 000 mm : à étudier par Ferplay');
+      if (m.kind === 'coulissant' && L > 16000) warn('L', 'A45 coulissant : largeur supérieure à 16000 mm : à étudier par Ferplay');
+      if (m.kind === 'autoportant' && L > 12000) warn('L', 'A45 autoporté : largeur supérieure à 12000 mm : à étudier par Ferplay');
     }
     // decisão 19: sistemas «sur devis» com os limites do tarif
     for (const o of m.options || []) if (v['o' + o.id]) {
       if (o.maxL && L > o.maxL) warn('L', '', tf('Option « {o} » : largeur maximum {n} mm : à étudier par Ferplay', { o: t(o.label), n: fmt(o.maxL) }));
       if (o.maxH && H > o.maxH) warn('H', '', tf('Option « {o} » : hauteur maximum {n} mm : à étudier par Ferplay', { o: t(o.label), n: fmt(o.maxH) }));
     }
-    if (m.code === 'INSMVAA4SM' && L >= 9000 && H > 0 && H <= 1250) { const s = 'A49 : largeur ≥ 9 000 mm avec hauteur ≤ 1 250 mm : combinaison non disponible, à étudier par Ferplay'; warnings.push({ k: 'H', msg: s, ui: t(s) }); }
+    if (m.code === 'INSMVAA4SM' && L >= 9000 && H > 0 && H <= 1250) { const s = 'A49 : largeur ≥ 9000 mm avec hauteur ≤ 1250 mm : combinaison non disponible, à étudier par Ferplay'; warnings.push({ k: 'H', msg: s, ui: t(s) }); }
     if (m.kind === 'cloture' && m.gamme === 'st' && Number(v.qt) > 40) { const s = 'Plus de 40 panneaux : à étudier par Ferplay'; warnings.push({ k: 'qt', msg: s, ui: t(s) }); }
   }
   if (m.hab && m.rec.dims && m.rec.dims.modo === 'surface' && Number(v.L) && Number(v.H)) {
@@ -5072,7 +5103,7 @@ function ficheData(p, r) {
 function uiTitle(p) {
   const m = CAT[p.code], v = effV(p.v);
   if (m.pieces) return piecesProductPdf(p, m, p.v).title;
-  if (p.indef) { const d = v.L && v.H ? ` – ${fmt(v.L)} × ${fmt(v.H)}` : (v.H ? ` – H ${fmt(v.H)}` : ''); return `${t(KIND_SHORT[m.kind])} ${p.modeleNom || (m.hab ? t(m.ldg ? m.groupeNom : m.groupeNom || m.label) : t('Modèle'))} (${t('variante à définir')})${d}`; }
+  if (p.indef) { const d = v.L && v.H ? ` – ${fmt(v.L)} × ${fmt(v.H)}` : (v.H ? ` – H ${fmt(v.H)}` : ''); return `${t(KIND_SHORT[m.kind])} ${p.modeleNom || (m.hab ? t(m.ldg ? m.groupeNom : m.groupeNom || m.label) : (m.groupeNom || t('Modèle')))} (${t('variante à définir')})${d}`; }
   const hv = v.H || v.Hin2 || v.Hin3, dims = v.L && hv ? ` – ${fmt(v.L)} × ${fmt(hv)}` : (v.H ? ` – H ${fmt(v.H)}` : '');
   return `${t(KIND_SHORT[m.kind])} ${m.ldg ? t(m.label) : m.label}${dims}`;
 }
@@ -5101,7 +5132,7 @@ function productPdfIn(p) {
   // 27/10/2026 (decisão 7): série média/lourde do A45 autoporté, visível na ficha para os desenhadores
   const serie = !m.hab && m.serieAuto && Number(v.L) > 0 ? (Number(v.L) > 6000 ? 'lourde' : 'média') : '';
   if (!m.hab && m.vantaux && (v.vantaux === 'mono' || v.vantaux === 'tierce')) secs[t('Produit')][1][1] = t(v.vantaux === 'mono' ? 'Portail battant (monovantail)' : 'Portail battant (vantaux inégaux – tiercé)');
-  if (serie) secs[t('Produit')].push([t('Série'), t(serie === 'lourde' ? 'Série lourde (largeur supérieure à 6 000 mm)' : 'Série média (largeur jusqu’à 6 000 mm)')]);
+  if (serie) secs[t('Produit')].push([t('Série'), t(serie === 'lourde' ? 'Série lourde (largeur supérieure à 6000 mm)' : 'Série média (largeur jusqu’à 6000 mm)')]);
   const details = Object.entries(secs).map(([title, rows]) => ({ title, rows }));
   const { warnings } = validateProduct(m, v0);
   if (m.hab) {
@@ -5128,8 +5159,7 @@ function productPdfIn(p) {
     P.serLoc = /locinox/i.test(v.serMan || '');   // coulissant/autoportant: caixa LOCINOX do ARC
     if (m.vantaux) P.vantaux = v.vantaux;   // decisão 11: 2v / tierce / mono
     if (ouv === 'motorise' && v.m_src === 'ferplay' && v.m_app) P.kit = String(v.m_app).split(' – ')[0];   // decisão 14: kit do tarif → MODEL no ARC
-    if (v.finTole) P.horsArc.push(t('Finition de la tôle') + ' : ' + t(v.finTole));
-    if (v.finRal) P.horsArc.push(t('Finition de la couleur') + ' : ' + t(v.finRal));
+    if (v.finRal && chapaInd(m, v)) P.horsArc.push(t('Finition de la couleur') + ' : ' + t(v.finRal));   // 17/11/2026: só com chapa; «Finition de la tôle» deixou de existir
     if (v.platGonds) P.horsArc.push(t('Platine pour gonds'));
     P.rail = v.rail === 'sem' ? undefined : v.rail;
     if (v.rail === 'sem') P.horsArc.push(t('Rail au sol') + ' : ' + t('Sans guide au sol'));
@@ -5208,9 +5238,9 @@ function productPdfIn(p) {
   }
   const hv = v.H || v.Hin2 || v.Hin3, dims = v.L && hv ? ` – ${fmt(v.L)} × ${fmt(hv)}` : (v.H ? ` – H ${fmt(v.H)}` : '');
   if (['battant', 'coulissant', 'autoportant', 'portillon'].includes(m.kind) && Number(v.H)) P.potH = Number(v.potHx) > 0 ? Number(v.potHx) : 0;   // pilares do Ferro (Industriel e Habitat, 03/11/2026): H + 90, H + 130 com lisse défensive, + 500 de chumbamento à sceller; editável
-  if (p.indef) P.modele = p.modeleNom || `${t('Modèle')} ${t('à définir')} (${t(m.gamme === 'co' ? 'Collectif' : m.gamme === 'sm' ? 'Industriel sur mesure' : 'Industriel standard')})`;
+  if (p.indef) P.modele = p.modeleNom || (m.groupeNom ? `${m.groupeNom} – ${t('variante à définir')}` : '') || `${t('Modèle')} ${t('à définir')} (${t(m.gamme === 'co' ? 'Collectif' : m.gamme === 'sm' ? 'Industriel sur mesure' : 'Industriel standard')})`;
   // decisão 7: a série (média/lourde) vai para MODELE no ARC e para as Observations, para os desenhadores (o ARC é em francês: texto fixo)
-  if (serie && !(p.indef && p.modeleNom)) { P.modele = `${m.label} série ${serie === 'lourde' ? 'lourde' : 'média'}`; P.horsArc.push(`Série A45 autoporté : ${serie === 'lourde' ? 'lourde (largeur > 6 000 mm)' : 'média (largeur ≤ 6 000 mm)'}`); }
+  if (serie && !(p.indef && p.modeleNom)) { P.modele = `${m.label} série ${serie === 'lourde' ? 'lourde' : 'média'}`; P.horsArc.push(`Série A45 autoporté : ${serie === 'lourde' ? 'lourde (largeur > 6000 mm)' : 'média (largeur ≤ 6000 mm)'}`); }
   if (m.faceLos && v.faceLos) P.horsArc.push('Barreaux carrés 25x25 : ' + (v.faceLos === 'losange' ? 'en losange' : 'de face'));
   // Ferro standard (23/10/2026): ARC próprio (CONF CDE FER - <TIPO> - STANDARD, cria_arc_standard.py), só com o que estes modelos têm
   if (ARC_STD && m.gamme === 'st' && !p.indef) {
@@ -5231,7 +5261,7 @@ function productPdfIn(p) {
     P.horsArc = [];   // as opções têm caixa no ARC standard; as que não têm vão para as Observations em fillStd
   }
   return {
-    title: p.indef ? `${t(KIND_SHORT[m.kind])} ${p.modeleNom || (t('Modèle') + ' ' + t('à définir'))}${dims}` : `${t(KIND_SHORT[m.kind])} ${m.label}${dims}`,
+    title: p.indef ? `${t(KIND_SHORT[m.kind])} ${p.modeleNom || (m.groupeNom ? m.groupeNom + ' – ' + t('variante à définir') : t('Modèle') + ' ' + t('à définir'))}${dims}` : `${t(KIND_SHORT[m.kind])} ${m.label}${dims}`,
     status: warnings.length ? 'orange' : 'green', warnings: warnings.map(w => w.ui),
     v: { kind: m.kind, qt: v.qt, L: m.kind === 'cloture' && m.gamme === 'st' ? '' : v.L, H: v.H, sens: v.sens },
     pdf: P, details, obs: v.obs || ''
@@ -5309,7 +5339,13 @@ function renderEditor() {
     if (v.gamme && v.kind) {
       const ms = editorModels(v);
       if (ms.length === 1) { if (v.code !== ms[0].code) { v.code = ms[0].code; editing.auto = true; } }
-      else h += `<div class="f"><label class="req" for="e_code">${t('Modèle')}</label><select id="e_code" name="e_code"><option value=""></option>${ms.map(m => `<option value="${m.code}" ${v.code === m.code ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>`;
+      else {
+        // 17/11/2026 (feedback interno): num produto «à définir» (ex.: PDF importado sem modelo) o seletor mostra «À définir», e não o modelo-base já escolhido:
+        // antes, escolher à mão o mesmo modelo que lá estava não gerava alteração e o ARC saía «à définir». O nome (devis ou escrito à mão) segue para o MODELE.
+        const nd = INTERNE && v.indef;
+        if (nd && !v.code) v.code = ms[0].code;
+        h += `<div class="f"><label class="${nd ? '' : 'req'}" for="e_code">${t('Modèle')}</label><select id="e_code" name="e_code"><option value="">${nd ? t('À définir') : ''}</option>${ms.map(m => `<option value="${m.code}" ${!nd && v.code === m.code ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>${nd ? nomModeleField(v) : ''}`;
+      }
     }
   }
   if (!pieces && v.mat && v.fiche === 'habitat') {
@@ -5326,7 +5362,7 @@ function renderEditor() {
       const vars = ofK.filter(x => x.groupe === v.groupe).sort((a, b) => a.label.localeCompare(b.label, 'fr', { numeric: true }));
       // versão interna (22/10/2026): a variante não é obrigatória; fica «À définir» e valem as regras da 1.ª variante da lista
       if (INTERNE && v.groupe && vars.length > 1 && !v.code) { v.indef = true; v.code = vars[0].code; }
-      if (v.groupe && vars.length > 1) h += `<div class="f"><label class="${INTERNE ? '' : 'req'}" for="e_code">${t('Variante')}</label><select id="e_code" name="e_code"><option value="">${INTERNE ? t('À définir') : ''}</option>${vars.map(m => `<option value="${m.code}" ${(!v.indef || !INTERNE) && v.code === m.code ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>`;
+      if (v.groupe && vars.length > 1) h += `<div class="f"><label class="${INTERNE ? '' : 'req'}" for="e_code">${t('Variante')}</label><select id="e_code" name="e_code"><option value="">${INTERNE ? t('À définir') : ''}</option>${vars.map(m => `<option value="${m.code}" ${(!v.indef || !INTERNE) && v.code === m.code ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>${INTERNE && v.indef ? nomModeleField(v) : ''}`;
       else if (v.groupe && vars.length === 1 && v.code !== vars[0].code) { v.code = vars[0].code; }
     }
   }
@@ -5459,6 +5495,7 @@ function editorChange(e) {
   if (t.id === 'f_obs') obsCount();
   if (t.dataset.qty) { const qk = t.dataset.qk || 'm_acc'; v.f[qk] = v.f[qk] || {}; v.f[qk][t.dataset.qty] = Number(t.value) || 0; save(); updateEditorStatusOnly(); renderStatus(); return; }   // 12/11/2026: basta uma linha com quantidade (qualquer subconjunto); o aviso atualiza-se logo
   const n = t.name || t.id; if (!n) return;
+  if (n === 'e_modeleNom') { v.modeleNom = t.value; editing.dirty = true; save(); return; }   // 17/11/2026
   if (n === 'e_type') {   // 05/11/2026: Complet / Pièces — mudar de tipo recomeça as respostas do produto
     const keepFiche = v.fiche && v.fiche !== 'pieces' ? v.fiche : (t.value === 'complet' ? 'industriel' : null);   // 05/11/2026: a Fiche escolhida mantém-se ao mudar de Complet para Peças (e vice-versa)
     v.type = t.value; v.f = {}; v.indef = false; delete v.keep;
@@ -5470,6 +5507,7 @@ function editorChange(e) {
     const k = n.slice(2);
     v[k] = t.value;
     v.indef = false;   // «À définir» só se mantém quando se volta a escolher o vazio na variante (ver o ramo abaixo)
+    if (k === 'code' && t.value) delete v.modeleNom;   // variante escolhida: usa-se o nome dela
     if (k === 'code' && t.value === '' && INTERNE) v.indef = true;
     // mudar uma escolha de topo limpa as seguintes e as respostas do produto
     const order = ['mat', 'fiche', 'gamme', 'kind', 'groupe', 'code'];
@@ -5583,7 +5621,7 @@ function updateEditorStatusOnly() {
 }
 function startEdit(index) {
   if (index < 0) editing = { index: -1, v: { mat: 'fer', type: 'complet', fiche: 'industriel', f: {} }, touched: false };
-  else { const p = S.products[index], cm = CAT[p.code]; editing = { index, v: { mat: p.mat, type: cm.pieces ? 'pieces' : 'complet', fiche: cm.pieces ? (p.v.pc_fiche || (p.fiche === 'habitat' ? 'habitat' : 'industriel')) : p.fiche, gamme: cm.pieces ? (p.v.pc_gamme || undefined) : cm.gamme, kind: cm.kind, groupe: cm.groupe, code: p.code, indef: !!p.indef, f: JSON.parse(JSON.stringify(p.v)) }, touched: true }; }   // 05/11/2026: ao modificar, os campos em falta ficam logo assinalados
+  else { const p = S.products[index], cm = CAT[p.code]; editing = { index, v: { mat: p.mat, type: cm.pieces ? 'pieces' : 'complet', fiche: cm.pieces ? (p.v.pc_fiche || (p.fiche === 'habitat' ? 'habitat' : 'industriel')) : p.fiche, gamme: cm.pieces ? (p.v.pc_gamme || undefined) : cm.gamme, kind: cm.kind, groupe: cm.groupe, code: p.code, indef: !!p.indef, modeleNom: p.modeleNom || '', f: JSON.parse(JSON.stringify(p.v)) }, touched: true }; }   // 05/11/2026: ao modificar, os campos em falta ficam logo assinalados
   renderAll(); save();
   $('secEditor').scrollIntoView({ block: 'start' });
 }
@@ -5601,7 +5639,7 @@ $('btnSave').onclick = () => {
   const { errors } = validateProduct(m, editing.v.f || {});
   if (errors.length) { renderEditor(); focusField(errors[0].k); return; }
   const p = { mat: editing.v.mat, fiche: editing.v.fiche, code: editing.v.code, v: editing.v.f };
-  if (editing.v.indef && INTERNE) p.indef = true;
+  if (editing.v.indef && INTERNE) { p.indef = true; const mn = String(editing.v.modeleNom || '').trim(); if (mn && !/^[àa] d[ée]finir$/i.test(mn)) p.modeleNom = mn; }   // 17/11/2026: o nome do modelo (devis ou escrito à mão) não se perde ao editar
   if (editing.index < 0) S.products.push(p); else S.products[editing.index] = p;
   preloadTpl(p);
   editing = null; renderAll(); save();
@@ -5825,7 +5863,7 @@ function renderStatus() {
   if (editing) txt = t('Produit en cours de modification.') + ' ' + txt;
   { const done = [!ce.length, !!S.products.length && !bad && !editing, Object.keys(generated).length > 0]; const cur = done.indexOf(false);
     document.querySelectorAll('#steps3 button').forEach((b, k) => { b.classList.toggle('done', done[k]); b.classList.toggle('cur', k === cur); if (k === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); }); }
-  $('chip').className = 'chip ' + cls; $('chip').textContent = chip; $('statusTxt').textContent = txt.trim();
+  $('chip').className = 'chip ' + cls; $('chip').textContent = chip; $('statusTxt').textContent = '';   // 17/11/2026 (Gonçalo): a frase da barra de estado é inútil: fica sempre vazia (selo e passos mantêm-se)
   const editErr = editing && editing.v.code && validateProduct(CAT[editing.v.code], editing.v.f).errors.length;
   $('btnGoto').hidden = !(ce.length || bad || editErr || !S.products.length || (editing && !editing.v.code));
   markClient(ce);
@@ -6426,7 +6464,7 @@ if (!PROD && INTERNE && location.hash.startsWith('#demo')) { exemple(); startEdi
         } } }
     // 12/11/2026 (Gonçalo): Village / Fluviale / Pierres Gemmes pedem só H2: «Hauteur au montant» = H2; «Hauteur sous chapeaux» = H1 → H2 pelas regras (coulissant − 30 / − 50, battant e portillon − 100)
     if (typeof habH2Only === 'function' && m.hab && habH2Only(m) && !v.Hin2) {
-      const pm = prod.pairs.find(p => /^hauteur au montant/.test(nz(p.key)) && dimMm(p.val).mm), p1 = prod.pairs.find(p => /^hauteur (sous chapeaux|totale|de passage)/.test(nz(p.key)) && dimMm(p.val).mm);
+      const pm = prod.pairs.find(p => /^hauteur\b.*\bmontants?\b/.test(nz(p.key)) && dimMm(p.val).mm), p1 = prod.pairs.find(p => /^hauteur (sous chapeaux|totale|de passage)/.test(nz(p.key)) && dimMm(p.val).mm);
       if (pm) { v.Hin2 = String(dimMm(pm.val).mm); v.hRef = 'H2'; used.add(pm); log.push({ field: 'Hin2', value: v.Hin2, src: pm.key + ' : ' + pm.val }); }
       else if (p1) { const h2 = habH2FromH1(m, dimMm(p1.val).mm); if (h2 > 0) { v.Hin2 = String(h2); v.hRef = 'H2'; used.add(p1); log.push({ field: 'Hin2', value: v.Hin2, src: p1.key + ' : ' + p1.val + ' (H1 → H2 pelas regras)' }); } }
     }
@@ -6647,7 +6685,7 @@ if (!PROD && INTERNE && location.hash.startsWith('#demo')) { exemple(); startEdi
     box.hidden = false;
     document.getElementById('pdfClose').onclick = () => { box.hidden = true; };
     // confirmação em dois cliques quando há trabalho no formulário (nada se apaga sem o utilizador confirmar)
-    const guard = (btn, fn) => { btn.onclick = () => { const ex = existing(); if (ex && !btn.dataset.ok) { btn.dataset.ok = '1'; btn.textContent = T('Confirmer : remplacer le client et les produits actuels du formulaire') + (ex.n ? ' (' + ex.n + ')' : ''); return; } fn(); }; };
+    const guard = (btn, fn) => { btn.onclick = () => fn(); };   // 17/11/2026 (Gonçalo): sem segundo clique de confirmação: «Appliquer» aplica logo (o aviso escrito acima dos botões mantém-se)
     box.querySelectorAll('[data-popen]').forEach(b => guard(b, () => openPartial(res, res.products[+b.dataset.popen])));
     guard(document.getElementById('pdfApply'), () => apply(res));
   }
@@ -7231,6 +7269,47 @@ if (!PROD && INTERNE && location.hash.startsWith('#demo')) { exemple(); startEdi
         products.push(pr);
       });
       const d = { isChiffreur: true, fromProfile: true, profileName: this.name, profile: 'sodismo', devis: '', client: o.societe, societe: o.societe, contact: '', address: [], tel: o.tel, email: o.email, chantier: [o.ncde, o.ref].filter(Boolean).join(' '), ncde: '', refInt: '', clientCde: o.ncde, transport: '', ignored: [], products: [] };
+      return { full: { devis: d, products, lines: c.L } };
+    },
+  });
+
+  // DISTRI-CLÔTURES (Betton), «COMMANDE» ao fornecedor (17/11/2026): cabeçalho em colunas (Date / Numéro / Fournisseur FFER02, Intervenant, Référence), cada artigo
+  // («DIVFERPLAY», «Portail alu 2 vantaux Pommerol 1,000 UN …») seguido das linhas do Chiffreur; no fim «Suivant le devis 26-49393» e «LIVRE A : DISTRI-CLOTURES BETTON …».
+  // A quantidade vem com 3 decimais («1,000 UN» = 1). O nome do modelo pode vir com gralhas («Pommerol»): corrige-se com uma tabela curta de alias.
+  PROFILES.push({
+    id: 'districlotcmd', name: 'Distri-Clôtures (commande)',
+    match: c => /DISTRI-?CLOTURES/i.test(c.all) && /^COMMANDE$/m.test(c.all) && /Fournisseur/.test(c.all) && /Suivant le devis/i.test(c.all),
+    parse(c) {
+      const T = c.T.map(x => String(x).replace(/[\uFFFD\u0000-\u001f]+/g, '').trim()).filter(Boolean);
+      const o = { societe: '', address: [], contact: '', tel: '', email: '', ref: '', ncde: '', devis: '' };
+      const mn = T.map(s => s.match(/\b(\d{2}\/\d{2}\/\d{4})\s+(\d{8,})\s+\S+/)).find(Boolean); if (mn) o.ncde = mn[2];
+      const sd = T.map(s => s.match(/^Suivant le devis\s+(\d{2}-\d+)/i)).find(Boolean); if (sd) o.devis = sd[1];
+      const ci = T.map(s => s.match(/^Intervenant\s+(?:\d+\s+)?(.+?)(?:\s+Vale\b.*)?$/i)).find(Boolean); if (ci) o.contact = ci[1].trim();
+      const rf = T.map(s => s.match(/^R[ée]f[ée]rence\s+(.+?)(?:\s+PORTUGAL)?$/i)).find(Boolean);
+      if (rf) { const h = rf[1].split(/\s+\/\s+/).map(x => x.trim()); o.ref = h.length === 2 && h[0].toLowerCase() === h[1].toLowerCase() ? h[0] : rf[1].trim(); }
+      const li = T.findIndex(s => /^LIVRE A\s*:/i.test(s));
+      if (li >= 0) { o.societe = T[li].replace(/^LIVRE A\s*:\s*/i, '').trim(); for (let k = li + 1; k < Math.min(T.length, li + 4); k++) if (/^(TOTAL|Conditions|LIVRAISON)/i.test(T[k])) break; else if (/^\d{4,5}\s+\S/.test(T[k]) || /^\d+[,\s]/.test(T[k])) o.address.push(T[k]); }
+      const ph = T.map(s => s.match(/\b(\d{2}[. ]\d{2}[. ]\d{2}[. ]\d{2}[. ]\d{2})\b/)).find(Boolean); if (ph) o.tel = ph[1].replace(/\./g, ' ');
+      const NOISE = /^(COMMANDE|Date\b|\d{2}\/\d{2}\/\d{4}\s+\d{8,}|FERPLAY$|Casais|Intervenant|\d{7}\s+TREMES|R[ée]f[ée]rence\b|Page \d|Prix en EUR|Article\b)/i;
+      const ALIAS = { pommerol: 'Pomerol' };
+      const heads = []; T.forEach((s, i) => { if (/^(Portail|Portillon|Cl[ôo]ture)\b/i.test(s) && /\d{1,3},\d{3}\s+UN\b/.test(s)) heads.push(i); });
+      const products = [];
+      heads.forEach((h, k) => {
+        let e = T.findIndex((s, i) => i > h && (/^(Suivant le devis|TOTAUX|LIVRE A)/i.test(s) || /^DIVFERPLAY$/.test(s) || (k + 1 < heads.length && i >= heads[k + 1])));
+        if (e < 0) e = T.length;
+        const body = T.slice(h + 1, e).filter(x => !NOISE.test(x) && !/^DIVFERPLAY$/.test(x));
+        const des = T[h].replace(/\s+\d{1,3},\d{3}\s+UN\b.*$/, '').trim();
+        const kind = /portillon/i.test(des) ? 'portillon' : /coulissant|coulis\b/i.test(des) ? 'coulissant' : /autoportant/i.test(des) ? 'autoportant' : /cl[ôo]ture/i.test(des) ? 'cloture' : 'battant';
+        const kindLine = { battant: 'Portail 2 Vantaux', coulissant: 'Portail Coulissant', autoportant: 'Portail autoportant', portillon: 'Portillon', cloture: 'Clôture' }[kind];
+        let nm = des.replace(/^(Portail|Portillon|Cl[ôo]ture)\s+(alu(minium)?\s+)?(\d\s*vantaux\s+|coulissant\s+|autoportant\s+)?/i, '').trim();
+        nm = nm.split(/\s+/).map(w => ALIAS[w.toLowerCase()] || w).join(' ');
+        const head = 'Habitat > Aluminium > Contemporain > VILLAGE > ' + nm + ' > ' + nm;
+        const pr = c.I.finishProd(c.I.parseBlock([head, kindLine, ...body]));
+        const mq = T[h].match(/\s(\d{1,3},\d{3})\s+UN\b/);
+        if (mq && pr.v) { const q = Math.round(Number(mq[1].replace(',', '.'))); if (q > 0) { pr.v.qt = String(q); pr.qtRead = true; } }
+        products.push(pr);
+      });
+      const d = { isChiffreur: true, fromProfile: true, profileName: this.name, profile: 'districlotcmd', devis: o.devis, client: o.societe, societe: o.societe, contact: o.contact, address: o.address, tel: o.tel, email: '', chantier: [o.ncde, o.ref].filter(Boolean).join(' '), ncde: '', refInt: '', clientCde: o.ncde, transport: '', ignored: [], products: [] };
       return { full: { devis: d, products, lines: c.L } };
     },
   });
